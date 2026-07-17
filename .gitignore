@@ -1,0 +1,25 @@
+# Environments & secrets
+.env
+*.env.local
+
+# Python
+backend/venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/package-lock.json.bak
+
+# Uploaded & sample data
+backend/uploads/
+sample_docs/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.log
