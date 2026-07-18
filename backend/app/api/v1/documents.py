@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, s
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, desc
+from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.config import settings
@@ -269,16 +270,15 @@ async def compare_versions(
 
 
 async def _fetch_document_with_versions(db: AsyncSession, doc_id: int) -> Optional[DocumentResponse]:
-    stmt = select(Document).where(Document.id == doc_id)
+    # Eager-load versions: validating the ORM object otherwise triggers a lazy
+    # load, which is illegal in async SQLAlchemy (MissingGreenlet).
+    stmt = select(Document).options(selectinload(Document.versions)).where(Document.id == doc_id)
     res = await db.execute(stmt)
     doc = res.scalar_one_or_none()
     if not doc:
         return None
 
-    stmt_v = select(DocumentVersion).where(DocumentVersion.document_id == doc_id).order_by(desc(DocumentVersion.version_number))
-    res_v = await db.execute(stmt_v)
-    versions = res_v.scalars().all()
-
+    versions = sorted(doc.versions, key=lambda v: v.version_number, reverse=True)
     resp = DocumentResponse.model_validate(doc)
     resp.versions = [DocumentVersionResponse.model_validate(v) for v in versions]
     return resp
