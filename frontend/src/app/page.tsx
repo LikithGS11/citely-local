@@ -73,7 +73,7 @@ export default function HomePage() {
           </h1>
 
           <p className="text-gray-300 text-base md:text-lg leading-relaxed">
-            Eliminate hours wasted searching across thousands of silos. Welcome to your secure, RBAC-enforced enterprise knowledge brain powered by **pgvector Hybrid Retrieval**, **BM25 Keyword Fusion**, and **Multi-Agent SQL+RAG Reasoning**.
+            Ask questions in plain language and get answers grounded in your own documents — with citations you can check. Powered by hybrid retrieval and a local language model.
           </p>
 
           <div className="flex flex-wrap items-center gap-4 pt-2">

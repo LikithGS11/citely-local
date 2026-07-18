@@ -69,7 +69,7 @@ export default function SemanticSearchPage() {
           Direct Semantic & Keyword Discovery
         </h1>
         <p className="text-sm text-gray-400 max-w-xl mx-auto">
-          Search across all company archives directly without chatbot synthesis. Results are ranked by **Reciprocal Rank Fusion** and filtered by your active department clearance.
+          Search across all company documents directly — results combine semantic similarity with keyword matching, ranked together.
         </p>
       </div>
 
@@ -96,7 +96,7 @@ export default function SemanticSearchPage() {
         <div className="flex flex-wrap items-center justify-between gap-4 px-2">
           <div className="flex items-center gap-3 text-xs text-gray-400">
             <Filter className="w-4 h-4 text-enterprise-400" />
-            <span className="font-semibold text-gray-300">RBAC Filters:</span>
+            <span className="font-semibold text-gray-300">Filters:</span>
 
             <select
               value={departmentFilter}
@@ -122,8 +122,8 @@ export default function SemanticSearchPage() {
             </select>
           </div>
 
-          <span className="text-[11px] text-gray-500 font-mono">
-            Clearance: **{user.department}** ({user.role.toUpperCase()})
+          <span className="text-[11px] text-gray-500">
+            {user.department} · {user.role}
           </span>
         </div>
       </form>

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/components/common/AuthContext";
 import { API_BASE } from "@/lib/api";
+import { Markdown } from "@/components/common/Markdown";
 import { CitationCard, Citation } from "@/components/chat/CitationCard";
 import { AgentStepsModal, AgentStep } from "@/components/chat/AgentStepsModal";
 
@@ -37,7 +38,7 @@ export default function ChatAssistantPage() {
     {
       id: "welcome-1",
       role: "assistant",
-      content: `Hello **${user.full_name.split(" ")[0]}**! I am your **Enterprise AI Knowledge Assistant**. \n\nI am securely connected to **${user.department} Department** archives, our **pgvector Hybrid Index**, and **PostgreSQL Financial tables**. You can ask me natural language questions and verify every response using our interactive **Source Citations** or view live **Multi-Agent Thought Steps**.`,
+      content: `Hi, I'm your knowledge assistant. Ask me about company policies, supplier contracts, or payment history — every answer comes with citations to the source documents so you can verify it yourself.`,
     }
   ]);
   const [inputPrompt, setInputPrompt] = useState("");
@@ -128,7 +129,7 @@ export default function ChatAssistantPage() {
       {
         id: "welcome-reset",
         role: "assistant",
-        content: `Conversation memory cleared. Ready for your next inquiry, **${user.full_name.split(" ")[0]}**!`,
+        content: "Conversation memory cleared. What would you like to know?",
       }
     ]);
   };
@@ -142,14 +143,11 @@ export default function ChatAssistantPage() {
             <Bot className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="font-extrabold text-sm text-white flex items-center gap-2">
-              Hybrid RAG & Multi-Agent Assistant
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                Live Citations Grounded
-              </span>
+            <h2 className="font-extrabold text-sm text-white">
+              AI Assistant
             </h2>
             <p className="text-[11px] text-gray-400">
-              Multi-turn conversation memory active • Department: **{user.department}**
+              Answers grounded in your documents, with citations • {user.department}
             </p>
           </div>
         </div>
@@ -194,7 +192,7 @@ export default function ChatAssistantPage() {
                 <div className="flex items-center justify-between border-b border-dark-border pb-2.5">
                   <div className="flex items-center gap-2 text-xs font-bold text-enterprise-400">
                     <Sparkles className="w-3.5 h-3.5" />
-                    <span>Multi-Agent Execution Engine</span>
+                    <span>Answer</span>
                   </div>
                   <div className="flex items-center gap-3">
                     {msg.latency_ms && (
@@ -214,9 +212,13 @@ export default function ChatAssistantPage() {
               )}
 
               {/* Text Body */}
-              <div className="text-sm leading-relaxed whitespace-pre-line space-y-2 font-sans">
-                {msg.content}
-              </div>
+              {msg.role === "assistant" ? (
+                <Markdown content={msg.content} />
+              ) : (
+                <div className="text-sm leading-relaxed whitespace-pre-line font-sans">
+                  {msg.content}
+                </div>
+              )}
 
               {/* Unified SQL Table Results if present */}
               {msg.unified_data && msg.unified_data.sql_payment_records && (
@@ -266,7 +268,7 @@ export default function ChatAssistantPage() {
                 <div className="pt-3 border-t border-dark-border space-y-2.5">
                   <p className="text-xs font-bold text-gray-300 flex items-center gap-1.5">
                     <Bookmark className="w-3.5 h-3.5 text-enterprise-400" />
-                    Verified Source Citations ({msg.citations.length}):
+                    Source citations ({msg.citations.length})
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {msg.citations.map((c, idx) => (
@@ -291,7 +293,7 @@ export default function ChatAssistantPage() {
             </div>
             <div className="glass-panel px-6 py-4 rounded-2xl border border-dark-border flex items-center gap-3 text-xs text-gray-300 font-medium">
               <Loader2 className="w-4 h-4 text-enterprise-400 animate-spin" />
-              <span>Coordinator Agent evaluating query semantics and hybrid pgvector index...</span>
+              <span>Thinking — retrieving documents and generating an answer (local model, may take up to a minute)…</span>
             </div>
           </div>
         )}

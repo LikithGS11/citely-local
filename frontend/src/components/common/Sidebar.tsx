@@ -1,56 +1,61 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { 
-  Bot, 
-  FileText, 
-  Search, 
-  BarChart3, 
-  ShieldAlert, 
-  Layers, 
-  Sparkles,
-  Database
-} from "lucide-react";
-import { useAuth } from "./AuthContext";
+import { Bot, FileText, Search, BarChart3, Sparkles } from "lucide-react";
+import { API_BASE } from "@/lib/api";
+
+const HEALTH_URL = API_BASE.replace(/\/api\/v1\/?$/, "") + "/health";
 
 export const Sidebar: React.FC = () => {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const [backendUp, setBackendUp] = useState<boolean | null>(null);
+
+  // Real health check — no pretend "ONLINE" labels
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const res = await fetch(HEALTH_URL, { cache: "no-store" });
+        if (!cancelled) setBackendUp(res.ok);
+      } catch {
+        if (!cancelled) setBackendUp(false);
+      }
+    };
+    check();
+    const id = setInterval(check, 10000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
 
   const navItems = [
-    { name: "AI Assistant", href: "/chat", icon: Bot, badge: "Hybrid RAG + SQL" },
-    { name: "Knowledge Library", href: "/documents", icon: FileText, badge: "Versioning" },
-    { name: "Semantic Search", href: "/search", icon: Search, badge: "BM25+Dense" },
-    { name: "Executive Analytics", href: "/analytics", icon: BarChart3 },
-    { name: "Security & RBAC", href: "/admin", icon: ShieldAlert, badge: user.role.toUpperCase() },
+    { name: "AI Assistant", href: "/chat", icon: Bot },
+    { name: "Documents", href: "/documents", icon: FileText },
+    { name: "Search", href: "/search", icon: Search },
+    { name: "Analytics", href: "/analytics", icon: BarChart3 },
   ];
 
   return (
     <aside className="w-64 glass-panel border-r border-dark-border flex flex-col justify-between h-screen sticky top-0 z-40 select-none">
-      {/* Brand Header */}
+      {/* Brand */}
       <div>
         <div className="p-6 border-b border-dark-border flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-enterprise-500 to-purple-500 flex items-center justify-center shadow-glow-blue text-white font-bold text-xl">
-            <Sparkles className="w-6 h-6 animate-pulse" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-enterprise-500 to-purple-500 flex items-center justify-center text-white">
+            <Sparkles className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="font-extrabold text-base tracking-tight text-white flex items-center gap-1.5">
-              Enterprise <span className="gradient-text font-black">AI</span>
+            <h1 className="font-bold text-base tracking-tight text-white">
+              Enterprise <span className="gradient-text">AI</span>
             </h1>
-            <p className="text-[11px] text-gray-400 flex items-center gap-1">
-              <Database className="w-3 h-3 text-enterprise-400" />
-              Production RAG v1.0
-            </p>
+            <p className="text-[11px] text-gray-400">Knowledge workspace</p>
           </div>
         </div>
 
-        {/* Navigation links */}
-        <nav className="p-4 space-y-1.5">
-          <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-500">
-            Platform Modules
-          </div>
+        {/* Navigation */}
+        <nav className="p-4 space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href || (pathname.startsWith(item.href) && item.href !== "/");
@@ -58,49 +63,31 @@ export const Sidebar: React.FC = () => {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center justify-between px-3.5 py-3 rounded-xl transition-all duration-200 group ${
+                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-200 group ${
                   isActive
-                    ? "bg-gradient-to-r from-enterprise-600/30 to-purple-600/20 border border-enterprise-500/40 text-white font-semibold shadow-glow-blue"
+                    ? "bg-enterprise-600/20 border border-enterprise-500/40 text-white font-semibold"
                     : "text-gray-300 hover:bg-dark-accent/40 hover:text-white"
                 }`}
               >
-                <div className="flex items-center gap-3">
-                  <Icon className={`w-5 h-5 ${isActive ? "text-enterprise-400" : "text-gray-400 group-hover:text-enterprise-400 transition-colors"}`} />
-                  <span className="text-sm">{item.name}</span>
-                </div>
-                {item.badge && (
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                    isActive 
-                      ? "bg-enterprise-500/30 text-enterprise-200 border border-enterprise-400/30" 
-                      : "bg-dark-bg text-gray-400 group-hover:text-gray-200"
-                  }`}>
-                    {item.badge}
-                  </span>
-                )}
+                <Icon className={`w-5 h-5 ${isActive ? "text-enterprise-400" : "text-gray-400 group-hover:text-enterprise-400 transition-colors"}`} />
+                <span className="text-sm">{item.name}</span>
               </Link>
             );
           })}
         </nav>
       </div>
 
-      {/* Footer / System Status */}
-      <div className="p-4 border-t border-dark-border bg-dark-bg/40">
-        <div className="p-3 rounded-xl bg-dark-card/80 border border-dark-border/80 space-y-2">
-          <div className="flex items-center justify-between text-xs font-medium">
-            <span className="text-gray-400 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-              Engine Status
-            </span>
-            <span className="text-emerald-400 font-bold">ONLINE</span>
-          </div>
-          <div className="text-[11px] text-gray-400 flex justify-between">
-            <span>Vector Index:</span>
-            <span className="text-gray-200 font-mono">pgvector-16</span>
-          </div>
-          <div className="text-[11px] text-gray-400 flex justify-between">
-            <span>Worker Queue:</span>
-            <span className="text-enterprise-400 font-mono">Celery Async</span>
-          </div>
+      {/* Footer: real backend status */}
+      <div className="p-4 border-t border-dark-border">
+        <div className="flex items-center gap-2 px-2 text-xs">
+          <span
+            className={`w-2 h-2 rounded-full ${
+              backendUp === null ? "bg-gray-500" : backendUp ? "bg-emerald-500" : "bg-rose-500"
+            }`}
+          />
+          <span className="text-gray-400">
+            {backendUp === null ? "Checking backend…" : backendUp ? "Backend connected" : "Backend offline"}
+          </span>
         </div>
       </div>
     </aside>

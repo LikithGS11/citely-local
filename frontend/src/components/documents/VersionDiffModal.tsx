@@ -33,7 +33,7 @@ export const VersionDiffModal: React.FC<VersionDiffModalProps> = ({ data, onClos
                 Version Changelog & Semantic Diff
               </h3>
               <p className="text-xs text-gray-400">
-                Comparing **{data.document_title}** (v{data.version_1} vs v{data.version_2})
+                Comparing {data.document_title} (v{data.version_1} vs v{data.version_2})
               </p>
             </div>
           </div>
