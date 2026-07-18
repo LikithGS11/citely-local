@@ -23,3 +23,5 @@ sample_docs/
 .DS_Store
 Thumbs.db
 *.log
+
+logs/
