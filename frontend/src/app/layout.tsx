@@ -2,13 +2,18 @@ import React from "react";
 import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/components/common/AuthContext";
-import { Sidebar } from "@/components/common/Sidebar";
-import { Header } from "@/components/common/Header";
+import { SettingsProvider } from "@/components/common/SettingsContext";
+import { ToastProvider } from "@/components/common/ToastContext";
+import { AppShell } from "@/components/common/AppShell";
 
 export const metadata: Metadata = {
-  title: "Enterprise AI Knowledge Intelligence Platform",
-  description: "Production-grade RAG platform with multi-agent orchestration, SQL+RAG, exact source citations, and RBAC security.",
+  title: "Enterprise AI Knowledge Workspace",
+  description: "Ask questions across your documents and get grounded, cited answers.",
 };
+
+// Applies the saved theme before first paint, so there's no flash of the
+// wrong theme while React hydrates.
+const THEME_INIT_SCRIPT = `(function(){try{var s=JSON.parse(localStorage.getItem('enterprise_rag_settings')||'{}');if(s.theme==='light')document.documentElement.classList.add('light');}catch(e){}})();`;
 
 export default function RootLayout({
   children,
@@ -16,18 +21,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className="bg-dark-bg text-gray-100 antialiased selection:bg-enterprise-500 selection:text-white">
+    <html lang="en">
+      <body className="bg-dark-bg text-ink-primary antialiased selection:bg-accent-500 selection:text-white">
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <AuthProvider>
-          <div className="flex min-h-screen">
-            <Sidebar />
-            <div className="flex-1 flex flex-col min-w-0">
-              <Header />
-              <main className="flex-1 overflow-y-auto p-8 max-w-7xl mx-auto w-full">
-                {children}
-              </main>
-            </div>
-          </div>
+          <SettingsProvider>
+            <ToastProvider>
+              <AppShell>{children}</AppShell>
+            </ToastProvider>
+          </SettingsProvider>
         </AuthProvider>
       </body>
     </html>

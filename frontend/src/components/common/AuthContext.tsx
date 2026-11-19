@@ -10,72 +10,93 @@ export interface User {
   department: string;
 }
 
-const DEMO_ACCOUNTS: User[] = [
+// Authentication is disabled: the backend runs every request as one local admin
+// user. Profiles here are local display labels only — the API ignores them.
+const SEED_PROFILES: User[] = [
   {
     id: 1,
-    email: "admin@enterprise.ai",
-    full_name: "Dr. Elena Vance (Chief AI Officer)",
+    email: "local@enterprise.ai",
+    full_name: "Local User",
     role: "admin",
     department: "General",
   },
-  {
-    id: 2,
-    email: "hr@enterprise.ai",
-    full_name: "Marcus Sterling (VP Human Resources)",
-    role: "manager",
-    department: "HR",
-  },
-  {
-    id: 3,
-    email: "finance@enterprise.ai",
-    full_name: "Samantha Chen (Senior Financial Controller)",
-    role: "manager",
-    department: "Finance",
-  },
-  {
-    id: 4,
-    email: "engineer@enterprise.ai",
-    full_name: "Devon Taylor (Staff Infrastructure Engineer)",
-    role: "viewer",
-    department: "Engineering",
-  },
 ];
+
+const PROFILES_KEY = "enterprise_rag_profiles_v2";
+const ACTIVE_USER_KEY = "enterprise_rag_user_v2";
 
 interface AuthContextType {
   user: User;
-  demoAccounts: User[];
+  profiles: User[];
   switchUser: (user: User) => void;
+  addProfile: (profile: Omit<User, "id">) => User;
+  removeProfile: (id: number) => void;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User>(DEMO_ACCOUNTS[0]);
+  const [profiles, setProfiles] = useState<User[]>(SEED_PROFILES);
+  const [user, setUser] = useState<User>(SEED_PROFILES[0]);
 
   useEffect(() => {
-    const savedUser = localStorage.getItem("enterprise_rag_user");
+    let loadedProfiles = SEED_PROFILES;
+    const savedProfiles = localStorage.getItem(PROFILES_KEY);
+    if (savedProfiles) {
+      try {
+        const parsed = JSON.parse(savedProfiles);
+        if (Array.isArray(parsed) && parsed.length > 0) loadedProfiles = parsed;
+      } catch (e) {
+        console.error("Could not parse stored profiles:", e);
+      }
+    }
+    setProfiles(loadedProfiles);
+
+    const savedUser = localStorage.getItem(ACTIVE_USER_KEY);
     if (savedUser) {
       try {
-        setUser(JSON.parse(savedUser));
+        const parsedUser = JSON.parse(savedUser);
+        // Only trust the saved active user if it still exists (it may have been removed)
+        const stillExists = loadedProfiles.find((p) => p.id === parsedUser.id);
+        setUser(stillExists || loadedProfiles[0]);
       } catch (e) {
         console.error("Could not parse stored user:", e);
       }
     }
   }, []);
 
+  const persistProfiles = (next: User[]) => {
+    setProfiles(next);
+    localStorage.setItem(PROFILES_KEY, JSON.stringify(next));
+  };
+
   const switchUser = (newUser: User) => {
     setUser(newUser);
-    localStorage.setItem("enterprise_rag_user", JSON.stringify(newUser));
+    localStorage.setItem(ACTIVE_USER_KEY, JSON.stringify(newUser));
+  };
+
+  const addProfile = (profile: Omit<User, "id">): User => {
+    const newProfile: User = { ...profile, id: Date.now() };
+    persistProfiles([...profiles, newProfile]);
+    return newProfile;
+  };
+
+  const removeProfile = (id: number) => {
+    if (profiles.length <= 1) return; // always keep at least one profile
+    const next = profiles.filter((p) => p.id !== id);
+    persistProfiles(next);
+    if (user.id === id) {
+      switchUser(next[0]);
+    }
   };
 
   const logout = () => {
-    setUser(DEMO_ACCOUNTS[0]);
-    localStorage.removeItem("enterprise_rag_user");
+    switchUser(profiles[0]);
   };
 
   return (
-    <AuthContext.Provider value={{ user, demoAccounts: DEMO_ACCOUNTS, switchUser, logout }}>
+    <AuthContext.Provider value={{ user, profiles, switchUser, addProfile, removeProfile, logout }}>
       {children}
     </AuthContext.Provider>
   );

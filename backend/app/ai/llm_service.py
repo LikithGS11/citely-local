@@ -35,8 +35,14 @@ class LLMService:
         system_prompt: str,
         user_prompt: str,
         history: Optional[List[Dict[str, str]]] = None,
-        temperature: float = 0.2
+        temperature: float = 0.2,
+        think: Optional[bool] = None,
     ) -> str:
+        """
+        think: for reasoning models (e.g. qwen3) on Ollama, False skips the hidden
+        reasoning pass — much faster for trivial calls like intent classification.
+        None leaves the model's default.
+        """
         messages = [{"role": "system", "content": system_prompt}]
         if history:
             messages.extend(history)
@@ -44,7 +50,7 @@ class LLMService:
 
         if self.provider == "ollama":
             try:
-                return await self._ollama_chat(messages, temperature)
+                return await self._ollama_chat(messages, temperature, think)
             except Exception as e:
                 logger.error(f"Ollama call failed: {e}. Returning extractive fallback.")
 
@@ -62,17 +68,26 @@ class LLMService:
 
         return self._extractive_fallback(user_prompt)
 
-    async def _ollama_chat(self, messages: List[Dict[str, str]], temperature: float) -> str:
+    async def _ollama_chat(self, messages: List[Dict[str, str]], temperature: float, think: Optional[bool] = None) -> str:
+        payload = {
+            "model": settings.OLLAMA_MODEL,
+            "messages": messages,
+            "stream": False,
+            "options": {"temperature": temperature, "num_ctx": settings.OLLAMA_NUM_CTX},
+        }
+        if think is not None:
+            payload["think"] = think
         async with httpx.AsyncClient(timeout=180.0) as client:
-            resp = await client.post(
-                f"{settings.OLLAMA_BASE_URL}/api/chat",
-                json={
-                    "model": settings.OLLAMA_MODEL,
-                    "messages": messages,
-                    "stream": False,
-                    "options": {"temperature": temperature},
-                },
-            )
+            resp = await client.post(f"{settings.OLLAMA_BASE_URL}/api/chat", json=payload)
+            if resp.status_code == 400 and "think" in payload:
+                # Models without reasoning support reject the "think" flag — retry without it
+                payload.pop("think")
+                resp = await client.post(f"{settings.OLLAMA_BASE_URL}/api/chat", json=payload)
+            if resp.status_code == 404:
+                raise RuntimeError(
+                    f"Ollama model '{settings.OLLAMA_MODEL}' is not installed — run `ollama pull {settings.OLLAMA_MODEL}` "
+                    "or set OLLAMA_MODEL to an installed model"
+                )
             resp.raise_for_status()
             data = resp.json()
         content = (data.get("message") or {}).get("content", "")
@@ -97,12 +112,12 @@ class LLMService:
 
         if context:
             return (
-                "⚠️ The AI model is currently unreachable, so no generated summary is available. "
+                "⚠️ The AI model is currently unavailable (see server log), so no generated summary is available. "
                 "Here is the raw retrieved material relevant to your question:\n\n" + context
             )
         return (
-            "⚠️ The AI model is currently unreachable and no document context was retrieved for this query. "
-            "Please check that Ollama is running (`ollama serve`) or try again."
+            "⚠️ The AI model is currently unavailable and no document context was retrieved for this query. "
+            "Check that Ollama is running and that OLLAMA_MODEL is installed (`ollama list`)."
         )
 
 

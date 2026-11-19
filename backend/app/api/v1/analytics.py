@@ -1,7 +1,6 @@
-from collections import Counter
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, text
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.all_models import User, Document, SearchAnalytics
@@ -29,18 +28,17 @@ async def get_analytics_summary(
     res_d = await db.execute(select(Document.department, func.count(Document.id)).group_by(Document.department))
     dept_usage = [{"department": row[0], "count": row[1]} for row in res_d.all()]
 
-    # Top queried documents: count real hits from SearchAnalytics.top_document_ids
-    res_ids = await db.execute(select(SearchAnalytics.top_document_ids))
-    hit_counter: Counter = Counter()
-    for (ids_str,) in res_ids.all():
-        if ids_str:
-            for doc_id in ids_str.split(","):
-                if doc_id.strip().isdigit():
-                    hit_counter[int(doc_id.strip())] += 1
+    # Top queried documents: count hits in SQL instead of loading every row into Python
+    res_hits = await db.execute(text(
+        "SELECT CAST(x AS INTEGER) AS doc_id, COUNT(*) AS hits "
+        "FROM search_analytics, unnest(string_to_array(top_document_ids, ',')) AS x "
+        "WHERE x ~ '^[0-9]+$' GROUP BY 1 ORDER BY 2 DESC LIMIT 5"
+    ))
+    hit_counter = {row.doc_id: row.hits for row in res_hits}
 
     top_docs = []
     if hit_counter:
-        top_ids = [doc_id for doc_id, _ in hit_counter.most_common(5)]
+        top_ids = list(hit_counter)
         res_top = await db.execute(
             select(Document.id, Document.title, Document.department).where(Document.id.in_(top_ids))
         )

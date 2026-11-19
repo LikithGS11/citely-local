@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -32,6 +32,7 @@ class DocumentVersionResponse(BaseModel):
     file_size_bytes: int
     file_type: str
     content_summary: Optional[str] = None
+    status: str
     upload_date: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -80,7 +81,7 @@ class SearchRequest(BaseModel):
     query: str = Field(..., min_length=2)
     department_filter: Optional[str] = None
     confidentiality_filter: Optional[str] = None
-    top_k: int = 5
+    top_k: int = Field(5, ge=1, le=20)
 
 
 class SearchResponse(BaseModel):

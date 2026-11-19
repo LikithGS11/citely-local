@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
     API_V1_STR: str = "/api/v1"
+    # Origins allowed to call the API from a browser. Auth is disabled, so keep
+    # this tight — a wildcard would let any website you visit read your documents.
+    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
     # Database Configuration
     POSTGRES_SERVER: str = "localhost"
@@ -27,6 +30,9 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = "ollama"
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "qwen3:4b"
+    # Context window passed to Ollama. Its default is small, and overflowing it
+    # silently drops the oldest tokens (usually the system prompt).
+    OLLAMA_NUM_CTX: int = 8192
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_MODEL_NAME: str = "gpt-4o-mini"
     EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"

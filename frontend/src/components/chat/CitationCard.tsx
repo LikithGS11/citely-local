@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { X, FileText, Bookmark, ShieldAlert, Layers } from "lucide-react";
+import { Bookmark } from "lucide-react";
+import { Badge } from "@/components/ui/Badge";
 
 export interface Citation {
   chunk_id: number;
@@ -20,49 +21,51 @@ interface CitationCardProps {
   onPreview: (citation: Citation) => void;
 }
 
-export const CitationCard: React.FC<CitationCardProps> = ({ citation, index, onPreview }) => {
-  const getConfBadge = (conf: string) => {
-    switch (conf) {
-      case "Restricted":
-        return "bg-rose-500/20 text-rose-300 border-rose-500/40";
-      case "Confidential":
-        return "bg-amber-500/20 text-amber-300 border-amber-500/40";
-      default:
-        return "bg-blue-500/20 text-blue-300 border-blue-500/40";
-    }
-  };
+const confTone = (conf: string) => {
+  switch (conf) {
+    case "Restricted":
+      return "critical" as const;
+    case "Confidential":
+      return "warning" as const;
+    case "Public":
+      return "good" as const;
+    default:
+      return "neutral" as const;
+  }
+};
 
+export const CitationCard: React.FC<CitationCardProps> = ({ citation, index, onPreview }) => {
   return (
-    <div 
+    <button
       onClick={() => onPreview(citation)}
-      className="p-3 rounded-xl bg-dark-bg/80 border border-dark-border hover:border-enterprise-500/60 transition-all cursor-pointer space-y-2 group shadow-sm"
+      className="w-full text-left p-3 rounded-xl bg-dark-bg border border-dark-border hover:border-accent-500/40 transition-colors space-y-2 group"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="w-6 h-6 rounded-lg bg-enterprise-500/20 flex items-center justify-center text-enterprise-400 font-bold text-xs shrink-0">
-            #{index + 1}
-          </div>
-          <span className="font-bold text-xs text-white truncate group-hover:text-enterprise-400 transition-colors">
+          <span className="w-5 h-5 rounded bg-overlay/5 flex items-center justify-center text-ink-muted font-medium text-[10px] shrink-0">
+            {index + 1}
+          </span>
+          <span className="font-medium text-xs text-ink-primary truncate group-hover:text-accent-text transition-colors">
             {citation.document_title}
           </span>
         </div>
-        <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold border shrink-0 ${getConfBadge(citation.confidentiality_level)}`}>
+        <Badge tone={confTone(citation.confidentiality_level)} className="shrink-0">
           {citation.confidentiality_level}
-        </span>
+        </Badge>
       </div>
 
-      <div className="flex items-center gap-3 text-[11px] text-gray-400">
-        <span className="flex items-center gap-1">
-          <Bookmark className="w-3 h-3 text-enterprise-400" />
+      <div className="flex items-center gap-3 text-[11px] text-ink-muted">
+        <span className="flex items-center gap-1 shrink-0 whitespace-nowrap">
+          <Bookmark className="w-3 h-3" />
           Page {citation.page_number}
         </span>
-        <span className="truncate">§ {citation.section_title}</span>
-        <span className="ml-auto text-emerald-400 font-semibold">{citation.similarity_score}% Match</span>
+        <span className="truncate">{citation.section_title}</span>
+        <span className="ml-auto text-status-good font-medium shrink-0">{citation.similarity_score}%</span>
       </div>
 
-      <p className="text-[11px] text-gray-300 line-clamp-2 italic bg-dark-card/60 p-2 rounded-lg border border-dark-border/40">
-        "{citation.content_snippet}"
+      <p className="text-[11px] text-ink-secondary line-clamp-2 leading-relaxed">
+        {citation.content_snippet}
       </p>
-    </div>
+    </button>
   );
 };

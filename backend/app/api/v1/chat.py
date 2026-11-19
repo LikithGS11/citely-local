@@ -6,6 +6,7 @@ from app.core.security import get_current_user
 from app.models.all_models import User
 from app.schemas.all_schemas import ChatRequest, ChatResponse, ChatMessage
 from app.ai.agents import multi_agent_system
+from app.ai.embeddings import EmbeddingUnavailableError
 
 router = APIRouter(prefix="/chat", tags=["Multi-Agent AI Assistant & SQL+RAG"])
 
@@ -35,13 +36,17 @@ async def ask_assistant(
     if request.history:
         existing_history = request.history
 
-    # Execute multi-agent system
-    response = await multi_agent_system.process_chat(
-        db=db,
-        user=current_user,
-        message=request.message,
-        history=existing_history
-    )
+    try:
+        response = await multi_agent_system.process_chat(
+            db=db,
+            user=current_user,
+            message=request.message,
+            history=existing_history
+        )
+    except EmbeddingUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    existing_history = list(existing_history)
 
     # Append to memory
     existing_history.append(ChatMessage(role="user", content=request.message))

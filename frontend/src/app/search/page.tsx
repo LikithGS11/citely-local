@@ -1,13 +1,19 @@
-﻿"use client";
+"use client";
 
-import React, { useState } from "react";
-import { Search, Filter, Bookmark, FileText, Sparkles, Shield, ArrowUpRight } from "lucide-react";
-import { useAuth } from "@/components/common/AuthContext";
+import React, { useEffect, useRef, useState } from "react";
+import { Search, FileText, Loader2 } from "lucide-react";
 import { API_BASE } from "@/lib/api";
+import { useSettings } from "@/components/common/SettingsContext";
+import { useEscapeToClose } from "@/hooks/useEscapeToClose";
+import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { CitationCard, Citation } from "@/components/chat/CitationCard";
 
+const DEPARTMENTS = ["HR", "Finance", "Operations", "Engineering", "Legal", "General"];
+
 export default function SemanticSearchPage() {
-  const { user } = useAuth();
+  const { settings } = useSettings();
+  const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("");
   const [confidentialityFilter, setConfidentialityFilter] = useState("");
@@ -16,6 +22,18 @@ export default function SemanticSearchPage() {
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [selectedCitationPreview, setSelectedCitationPreview] = useState<Citation | null>(null);
+  useEscapeToClose(!!selectedCitationPreview, () => setSelectedCitationPreview(null));
+
+  // Focus the search box after the "/" global shortcut navigates here (see AppShell)
+  useEffect(() => {
+    const focusInput = () => inputRef.current?.focus();
+    if (sessionStorage.getItem("focusSearchOnLoad")) {
+      sessionStorage.removeItem("focusSearchOnLoad");
+      focusInput();
+    }
+    window.addEventListener("focus-search", focusInput);
+    return () => window.removeEventListener("focus-search", focusInput);
+  }, []);
 
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -27,14 +45,12 @@ export default function SemanticSearchPage() {
     try {
       const res = await fetch(`${API_BASE}/search/semantic`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query,
           department_filter: departmentFilter || null,
           confidentiality_filter: confidentialityFilter || null,
-          top_k: 6,
+          top_k: settings.searchResultCount,
         }),
       });
 
@@ -47,113 +63,85 @@ export default function SemanticSearchPage() {
     } catch (err) {
       console.error(err);
       setResults([]);
-      setSearchError("Search failed: could not reach the backend server at http://localhost:8000.");
+      setSearchError("Search failed: could not reach the backend server.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      {searchError && (
-        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/40 text-rose-300 text-xs font-semibold text-center">
-          {searchError}
-        </div>
-      )}
-      <div className="text-center space-y-3 pt-2">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-semibold">
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Direct Hybrid RAG Engine (Dense Vector + BM25 RRF)</span>
-        </div>
-        <h1 className="text-3xl font-black text-white">
-          Direct Semantic & Keyword Discovery
-        </h1>
-        <p className="text-sm text-gray-400 max-w-xl mx-auto">
-          Search across all company documents directly — results combine semantic similarity with keyword matching, ranked together.
+    <div className="space-y-6 max-w-3xl mx-auto">
+      <div className="text-center space-y-2 pt-2">
+        <h1 className="text-2xl font-semibold text-ink-primary">Search your documents</h1>
+        <p className="text-sm text-ink-muted max-w-lg mx-auto">
+          Combines meaning-based and keyword search, ranked together — no chat, just results.
         </p>
       </div>
 
-      {/* Search & Filter Bar */}
-      <form onSubmit={handleSearch} className="space-y-4">
-        <div className="p-2.5 rounded-2xl glass-panel border border-dark-border focus-within:border-enterprise-500/60 shadow-lg transition-all flex items-center gap-3">
-          <Search className="w-5 h-5 text-enterprise-400 ml-2" />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search e.g. 'cold storage requirements', 'supplier agreement penalty', 'invoice approval'..."
-            className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder:text-gray-500"
-          />
-          <button
-            type="submit"
-            disabled={!query.trim() || loading}
-            className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-enterprise-600 to-purple-600 hover:from-enterprise-500 hover:to-purple-500 disabled:opacity-50 text-white font-bold text-xs shadow-glow-blue transition-all"
-          >
-            {loading ? "Searching..." : "Search"}
-          </button>
+      <form onSubmit={handleSearch} className="space-y-3">
+        <div className="p-2 rounded-2xl bg-dark-card border border-dark-border focus-within:border-accent-500/50 transition-colors flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <div className="flex-1 flex items-center gap-2 min-w-0 px-1 sm:px-0">
+            <Search className="w-4 h-4 text-ink-muted ml-1 shrink-0" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="e.g. cold storage requirements…"
+              className="flex-1 min-w-0 bg-transparent border-none outline-none text-sm text-ink-primary placeholder:text-ink-muted"
+            />
+          </div>
+          <Button variant="primary" type="submit" disabled={!query.trim() || loading} className="w-full sm:w-auto">
+            {loading ? "Searching…" : "Search"}
+          </Button>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-4 px-2">
-          <div className="flex items-center gap-3 text-xs text-gray-400">
-            <Filter className="w-4 h-4 text-enterprise-400" />
-            <span className="font-semibold text-gray-300">Filters:</span>
-
-            <select
-              value={departmentFilter}
-              onChange={(e) => setDepartmentFilter(e.target.value)}
-              className="px-3 py-1.5 rounded-xl bg-dark-card border border-dark-border text-white outline-none"
-            >
-              <option value="">All Authorized Departments</option>
-              <option value="HR">HR Department</option>
-              <option value="Finance">Finance Department</option>
-              <option value="Operations">Operations Department</option>
-              <option value="Engineering">Engineering Department</option>
-            </select>
-
-            <select
-              value={confidentialityFilter}
-              onChange={(e) => setConfidentialityFilter(e.target.value)}
-              className="px-3 py-1.5 rounded-xl bg-dark-card border border-dark-border text-white outline-none"
-            >
-              <option value="">All Clearance Levels</option>
-              <option value="Public">Public</option>
-              <option value="Internal">Internal</option>
-              <option value="Confidential">Confidential</option>
-            </select>
-          </div>
-
-          <span className="text-[11px] text-gray-500">
-            {user.department} · {user.role}
-          </span>
+        <div className="flex flex-wrap items-center gap-2.5 px-1">
+          <select
+            value={departmentFilter}
+            onChange={(e) => setDepartmentFilter(e.target.value)}
+            className="px-3 py-1.5 rounded-lg bg-dark-card border border-dark-border text-xs text-ink-secondary outline-none"
+          >
+            <option value="">All departments</option>
+            {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+          <select
+            value={confidentialityFilter}
+            onChange={(e) => setConfidentialityFilter(e.target.value)}
+            className="px-3 py-1.5 rounded-lg bg-dark-card border border-dark-border text-xs text-ink-secondary outline-none"
+          >
+            <option value="">All clearance levels</option>
+            <option value="Public">Public</option>
+            <option value="Internal">Internal</option>
+            <option value="Confidential">Confidential</option>
+          </select>
         </div>
       </form>
 
-      {/* Results Grid */}
-      {searched && (
-        <div className="space-y-4 pt-4">
-          <div className="flex items-center justify-between border-b border-dark-border pb-3">
-            <h3 className="font-extrabold text-sm text-white flex items-center gap-2">
-              Retrieved Document Citations ({results.length})
-            </h3>
-            <span className="text-xs text-gray-400 font-mono">
-              Scored via pgvector Cosine {"<=>"} &amp; BM25
-            </span>
+      {searchError && (
+        <div className="p-3.5 rounded-xl bg-status-critical/10 border border-status-critical/25 text-status-critical text-sm text-center">
+          {searchError}
+        </div>
+      )}
+
+      {loading && (
+        <div className="p-10 text-center text-ink-muted text-sm flex items-center justify-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" /> Searching…
+        </div>
+      )}
+
+      {!loading && searched && (
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-ink-secondary">{results.length} result{results.length !== 1 ? "s" : ""}</h3>
           </div>
 
           {results.length === 0 ? (
-            <div className="p-12 text-center glass-panel rounded-2xl border border-dark-border">
-              <FileText className="w-8 h-8 text-gray-500 mx-auto mb-2" />
-              <p className="text-sm font-bold text-gray-300">No matching chunks found matching query and security criteria.</p>
-            </div>
+            <EmptyState icon={FileText} title="No matching documents" description="Try a different query or filter." />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               {results.map((cit, idx) => (
-                <CitationCard
-                  key={cit.chunk_id || idx}
-                  citation={cit}
-                  index={idx}
-                  onPreview={(c) => setSelectedCitationPreview(c)}
-                />
+                <CitationCard key={cit.chunk_id || idx} citation={cit} index={idx} onPreview={setSelectedCitationPreview} />
               ))}
             </div>
           )}
@@ -161,27 +149,25 @@ export default function SemanticSearchPage() {
       )}
 
       {selectedCitationPreview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-dark-bg/80 backdrop-blur-sm">
-          <div className="w-full max-w-xl glass-panel rounded-2xl p-6 border border-dark-border shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={() => setSelectedCitationPreview(null)}>
+          <div
+            className="w-full max-w-xl bg-dark-card rounded-2xl p-5 border border-dark-border shadow-card space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between border-b border-dark-border pb-3">
               <div>
-                <h3 className="font-extrabold text-base text-white">{selectedCitationPreview.document_title}</h3>
-                <p className="text-xs text-gray-400">
-                  Page {selectedCitationPreview.page_number} • Section: § {selectedCitationPreview.section_title}
+                <h3 className="font-semibold text-sm text-ink-primary">{selectedCitationPreview.document_title}</h3>
+                <p className="text-xs text-ink-muted mt-0.5">
+                  Page {selectedCitationPreview.page_number} · {selectedCitationPreview.section_title}
                 </p>
               </div>
-              <span className="text-xs font-bold text-emerald-400">{selectedCitationPreview.similarity_score}% Match</span>
+              <span className="text-xs font-medium text-status-good">{selectedCitationPreview.similarity_score}% match</span>
             </div>
-            <div className="p-4 rounded-xl bg-dark-bg font-mono text-xs text-gray-300 leading-relaxed max-h-64 overflow-y-auto border border-dark-border">
+            <div className="p-3 rounded-xl bg-dark-bg text-xs text-ink-secondary leading-relaxed max-h-64 overflow-y-auto border border-dark-border">
               {selectedCitationPreview.content_snippet}
             </div>
-            <div className="flex justify-end pt-2 border-t border-dark-border">
-              <button
-                onClick={() => setSelectedCitationPreview(null)}
-                className="px-4 py-2 rounded-xl bg-enterprise-600 text-white text-xs font-bold"
-              >
-                Close Preview
-              </button>
+            <div className="flex justify-end pt-1">
+              <Button variant="secondary" size="sm" onClick={() => setSelectedCitationPreview(null)}>Close</Button>
             </div>
           </div>
         </div>
@@ -189,4 +175,3 @@ export default function SemanticSearchPage() {
     </div>
   );
 }
-

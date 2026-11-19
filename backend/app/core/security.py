@@ -8,6 +8,7 @@ is kept only because scripts/seed_data.py still stores hashed passwords.
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from fastapi import Depends
 from app.core.database import get_db
 
@@ -46,6 +47,12 @@ async def get_current_user(db: AsyncSession = Depends(get_db)):
         is_active=True,
     )
     db.add(user)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Another request created the default user concurrently — use that one
+        await db.rollback()
+        result = await db.execute(select(User).where(User.email == DEFAULT_USER_EMAIL))
+        return result.scalar_one()
     await db.refresh(user)
     return user

@@ -46,7 +46,7 @@ async def test_rag_route_returns_citations(monkeypatch):
     system = MultiAgentSystem()
     replies = iter(["RAG", "According to HR Policy page 2, employees get 16 weeks paid leave."])
 
-    async def fake_llm(system_prompt, user_prompt, history=None, temperature=0.2):
+    async def fake_llm(system_prompt, user_prompt, history=None, **kwargs):
         return next(replies)
 
     async def fake_retrieve(db, query, current_user, top_k=5, **kwargs):
@@ -73,7 +73,7 @@ async def test_sql_rag_route_merges_structured_records(monkeypatch):
     system = MultiAgentSystem()
     replies = iter(["SQL_RAG", "Supplier ABC is 15 days late; contract imposes a 2.5% penalty."])
 
-    async def fake_llm(system_prompt, user_prompt, history=None, temperature=0.2):
+    async def fake_llm(system_prompt, user_prompt, history=None, **kwargs):
         return next(replies)
 
     async def fake_retrieve(db, query, current_user, top_k=5, **kwargs):
@@ -104,3 +104,27 @@ async def test_sql_rag_route_merges_structured_records(monkeypatch):
     agg = next(s for s in resp.agent_steps if s.action == "DATA_AGGREGATION")
     assert "Supplier ABC" in agg.details
     assert "15 days" in agg.details
+
+
+def test_clean_history_drops_duplicate_question_and_caps_length():
+    from app.schemas.all_schemas import ChatMessage
+    history = [ChatMessage(role="assistant", content="welcome")]
+    history += [ChatMessage(role="user" if i % 2 == 0 else "assistant", content=f"m{i}") for i in range(20)]
+    history.append(ChatMessage(role="user", content="What is the leave policy?"))
+
+    cleaned = MultiAgentSystem._clean_history(history, "What is the leave policy?")
+    assert cleaned[-1].content != "What is the leave policy?"
+    assert len(cleaned) == agents_module.MAX_HISTORY_MESSAGES
+
+
+@pytest.mark.asyncio
+async def test_classifier_ignores_words_merely_containing_rag(monkeypatch):
+    system = MultiAgentSystem()
+
+    async def chatty_llm(*args, **kwargs):
+        return "STORAGE questions are not my thing"
+
+    monkeypatch.setattr(agents_module.llm_service, "generate_chat_response", chatty_llm)
+    intent, source = await system._classify_intent("Show me the invoice delays")
+    assert source == "keyword fallback"
+    assert intent == "SQL_RAG"

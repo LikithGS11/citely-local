@@ -22,6 +22,9 @@ class HybridRetriever:
     2. BM25 keyword scoring over that candidate pool.
     3. Reciprocal Rank Fusion (RRF) to merge both rankings.
     Only chunks belonging to each document's *current* version are searched.
+    Note: no per-user access filtering happens here — auth is disabled, so every
+    request runs as the local admin. Raises EmbeddingUnavailableError if the
+    embedding model isn't loaded.
     """
     async def retrieve(
         self,
@@ -44,6 +47,7 @@ class HybridRetriever:
             .join(DocumentVersion, DocumentChunk.version_id == DocumentVersion.id)
             .where(DocumentVersion.version_number == Document.current_version_number)
             .where(Document.status == "READY")
+            .where(DocumentVersion.status == "READY")
             .where(DocumentChunk.embedding.isnot(None))
         )
         if department_filter:

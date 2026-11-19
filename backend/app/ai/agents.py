@@ -1,23 +1,40 @@
 import time
 import logging
-from typing import List, Dict, Any, Tuple
+from typing import List, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from app.models.all_models import User, SupplierContract, PaymentHistory, SearchAnalytics
+from sqlalchemy import select, desc
+from app.models.all_models import User, PaymentHistory
 from app.schemas.all_schemas import ChunkCitation, AgentThoughtStep, ChatResponse, ChatMessage
 from app.ai.retriever import hybrid_retriever
 from app.ai.llm_service import llm_service
+from app.services.analytics_service import log_search
 
 logger = logging.getLogger(__name__)
+
+# How many prior chat messages are sent to the LLM (keeps prompts inside num_ctx)
+MAX_HISTORY_MESSAGES = 8
+# Cap on structured rows put into the SQL+RAG prompt
+MAX_SQL_ROWS = 25
+
+
+def _format_citations(citations: List[ChunkCitation]) -> str:
+    return "\n\n".join(
+        f"--- [Document: {c.document_title} | Page: {c.page_number} | Section: {c.section_title}] ---\n{c.content_snippet}"
+        for c in citations
+    )
+
+
+def _step(agent: str, action: str, details: str) -> AgentThoughtStep:
+    return AgentThoughtStep(agent_name=agent, action=action, details=details, timestamp=time.time())
 
 
 class MultiAgentSystem:
     """
-    Orchestrates specialized agents:
-    - Coordinator Agent: Intent classification & multi-step workflow routing.
-    - Retrieval Agent: RAG search and strict source citation grounding.
-    - SQL Agent: Queries structured tables (SupplierContracts, PaymentHistory).
-    - Unified SQL + RAG Agent: Combines structured data aggregations with unstructured document reasoning.
+    Routes each question down one of two fixed pipelines:
+    - RAG: hybrid retrieval over documents, then LLM synthesis with citations.
+    - SQL+RAG: a fixed read-only query of delayed invoices in payment_history,
+      plus contract retrieval for the worst offender, then LLM synthesis.
+    The route is picked by an LLM classifier with a keyword fallback.
     """
     async def process_chat(
         self,
@@ -27,51 +44,39 @@ class MultiAgentSystem:
         history: List[ChatMessage]
     ) -> ChatResponse:
         start_time = time.time()
+        history = self._clean_history(history, message)
         agent_steps: List[AgentThoughtStep] = []
 
-        # 1. Coordinator Agent: Intent Classification & Routing (LLM-based, keyword fallback)
-        logger.info(f"[Coordinator Agent] Analyzing user prompt: '{message}'")
         intent, intent_source = await self._classify_intent(message)
-        agent_steps.append(
-            AgentThoughtStep(
-                agent_name="Coordinator Agent",
-                action="INTENT_CLASSIFICATION",
-                details=f"Classified intent as {intent} via {intent_source}.",
-                timestamp=time.time()
-            )
-        )
+        agent_steps.append(_step("Coordinator Agent", "INTENT_CLASSIFICATION", f"Classified intent as {intent} via {intent_source}."))
 
-        # 2. Execution Route decision
         if intent == "SQL_RAG":
-            # Route: Unified SQL + RAG Workflow
-            agent_steps.append(
-                AgentThoughtStep(
-                    agent_name="Coordinator Agent",
-                    action="ROUTING_DECISION",
-                    details="Detected requirement for both structured database aggregations (SQL) and unstructured document retrieval (RAG). Initiating multi-agent workflow.",
-                    timestamp=time.time()
-                )
-            )
+            agent_steps.append(_step(
+                "Coordinator Agent", "ROUTING_DECISION",
+                "Question needs payment records plus contract text: querying payment_history, then searching documents."
+            ))
             return await self._execute_sql_and_rag_workflow(db, user, message, history, agent_steps, start_time)
 
-        else:
-            # Route: Standard Hybrid RAG Retrieval Agent
-            agent_steps.append(
-                AgentThoughtStep(
-                    agent_name="Coordinator Agent",
-                    action="ROUTING_DECISION",
-                    details="Delegating to Retrieval Agent for Hybrid Vector (pgvector) + BM25 Keyword search across enterprise documents.",
-                    timestamp=time.time()
-                )
-            )
-            return await self._execute_retrieval_workflow(db, user, message, history, agent_steps, start_time)
+        agent_steps.append(_step(
+            "Coordinator Agent", "ROUTING_DECISION",
+            "Delegating to Retrieval Agent for hybrid vector (pgvector) + BM25 keyword search across documents."
+        ))
+        return await self._execute_retrieval_workflow(db, user, message, history, agent_steps, start_time)
+
+    @staticmethod
+    def _clean_history(history: List[ChatMessage], message: str) -> List[ChatMessage]:
+        """Drop non-chat roles, a trailing copy of the current question (it is sent
+        separately with its retrieved context), and anything beyond the window."""
+        cleaned = [h for h in history if h.role in ("user", "assistant") and h.content.strip()]
+        if cleaned and cleaned[-1].role == "user" and cleaned[-1].content.strip() == message.strip():
+            cleaned = cleaned[:-1]
+        return cleaned[-MAX_HISTORY_MESSAGES:]
 
     async def _classify_intent(self, message: str) -> Tuple[str, str]:
         """
-        Classifies the user question as 'SQL_RAG' (needs structured payment/contract
-        tables plus documents) or 'RAG' (documents alone). Uses the configured LLM;
-        falls back to keyword matching if the LLM is unavailable or answers off-format.
-        Returns (intent, source) where source describes how the decision was made.
+        Classifies the question as 'SQL_RAG' (needs the payment/contract tables plus
+        documents) or 'RAG' (documents alone). Uses the configured LLM; falls back to
+        keyword matching if the LLM is unavailable or answers off-format.
         """
         system = (
             "You are an intent classifier for an enterprise knowledge assistant. "
@@ -83,12 +88,12 @@ class MultiAgentSystem:
             "(policies, SOPs, guides, contract text, general knowledge searches)."
         )
         try:
-            answer = await llm_service.generate_chat_response(system, f"Question: {message}", temperature=0.0)
-            answer_up = answer.strip().upper()
-            if "SQL_RAG" in answer_up:
-                return "SQL_RAG", "LLM classifier"
-            if "RAG" in answer_up:
-                return "RAG", "LLM classifier"
+            answer = await llm_service.generate_chat_response(
+                system, f"Question: {message}", temperature=0.0, think=False
+            )
+            first_word = (answer.strip().split() or [""])[0].strip(".:,\"'`*").upper()
+            if first_word in ("SQL_RAG", "RAG"):
+                return first_word, "LLM classifier"
             logger.warning(f"Intent classifier returned off-format answer: '{answer[:80]}'")
         except Exception as e:
             logger.warning(f"LLM intent classification failed: {e}")
@@ -107,68 +112,33 @@ class MultiAgentSystem:
         agent_steps: List[AgentThoughtStep],
         start_time: float
     ) -> ChatResponse:
-        # Retrieval Agent step
-        agent_steps.append(
-            AgentThoughtStep(
-                agent_name="Retrieval Agent",
-                action="HYBRID_SEARCH",
-                details=f"Enforcing RBAC (Role: {user.role}, Dept: {user.department}) and querying dense vector index + BM25 keyword ranker.",
-                timestamp=time.time()
-            )
-        )
+        agent_steps.append(_step(
+            "Retrieval Agent", "HYBRID_SEARCH",
+            "Querying the pgvector index and re-ranking candidates with BM25 + reciprocal rank fusion."
+        ))
 
         citations = await hybrid_retriever.retrieve(db, query=message, current_user=user, top_k=4)
 
-        agent_steps.append(
-            AgentThoughtStep(
-                agent_name="Retrieval Agent",
-                action="CITATION_GROUNDING",
-                details=f"Retrieved {len(citations)} relevant chunks with average confidence of {round(sum(c.similarity_score for c in citations)/max(len(citations),1), 1)}%. Formatting exact section & page citations.",
-                timestamp=time.time()
-            )
-        )
-
-        # Prepare context for LLM
-        context_snippets = "\n\n".join([
-            f"--- [Document: {c.document_title} | Page: {c.page_number} | Section: {c.section_title}] ---\n{c.content_snippet}"
-            for c in citations
-        ])
+        avg = round(sum(c.similarity_score for c in citations) / max(len(citations), 1), 1)
+        agent_steps.append(_step(
+            "Retrieval Agent", "CITATION_GROUNDING",
+            f"Retrieved {len(citations)} chunks (average cosine similarity {avg}%)."
+        ))
 
         system_prompt = (
-            "You are the Enterprise AI Knowledge Assistant. You must answer the user's question accurately and professionally using strictly the provided document context below. "
-            "Whenever you state a fact from the text, explicitly reference the Document Name and Page Number."
+            "You are the Enterprise AI Knowledge Assistant. Answer the user's question using only the "
+            "document context provided. Whenever you state a fact from the context, cite the Document Name "
+            "and Page Number. If the context does not contain the answer, say so plainly."
         )
-        user_prompt = f"User Question: {message}\n\nRetrieved Document Context:\n{context_snippets}"
+        user_prompt = f"User Question: {message}\n\nRetrieved Document Context:\n{_format_citations(citations) or '(no matching documents)'}"
 
-        agent_steps.append(
-            AgentThoughtStep(
-                agent_name="Summarization & Generation Agent",
-                action="LLM_SYNTHESIS",
-                details="Synthesizing final answer ensuring zero hallucination and strict citation mapping.",
-                timestamp=time.time()
-            )
-        )
+        agent_steps.append(_step("Generation Agent", "LLM_SYNTHESIS", "Generating an answer from the retrieved context."))
 
         history_dict = [{"role": h.role, "content": h.content} for h in history]
         answer = await llm_service.generate_chat_response(system_prompt, user_prompt, history_dict)
 
         latency = (time.time() - start_time) * 1000
-
-        # Log search analytics
-        try:
-            doc_ids_str = ",".join(str(c.document_id) for c in citations)
-            analytics_entry = SearchAnalytics(
-                user_id=user.id,
-                query_text=message,
-                retrieval_method="Hybrid RAG (pgvector + BM25)",
-                top_document_ids=doc_ids_str,
-                latency_ms=latency,
-                result_count=len(citations)
-            )
-            db.add(analytics_entry)
-            await db.commit()
-        except Exception as e:
-            logger.warning(f"Could not log search analytics: {e}")
+        await log_search(db, user.id, message, "Chat: Hybrid RAG", citations, latency)
 
         return ChatResponse(
             answer=answer,
@@ -187,19 +157,18 @@ class MultiAgentSystem:
         agent_steps: List[AgentThoughtStep],
         start_time: float
     ) -> ChatResponse:
-        # 1. SQL Agent Step: Querying structured payment & contract tables
-        agent_steps.append(
-            AgentThoughtStep(
-                agent_name="SQL Agent",
-                action="DATABASE_QUERY",
-                details="Executing read-only query on payment_history for invoices with status 'Delayed'.",
-                timestamp=time.time()
-            )
-        )
+        agent_steps.append(_step(
+            "SQL Agent", "DATABASE_QUERY",
+            f"Running a fixed read-only query: invoices with status 'Delayed' in payment_history, worst {MAX_SQL_ROWS} by delay."
+        ))
 
-        stmt_payments = select(PaymentHistory).where(PaymentHistory.status == "Delayed")
-        res_payments = await db.execute(stmt_payments)
-        delayed_records = res_payments.scalars().all()
+        stmt_payments = (
+            select(PaymentHistory)
+            .where(PaymentHistory.status == "Delayed")
+            .order_by(desc(PaymentHistory.delay_days))
+            .limit(MAX_SQL_ROWS)
+        )
+        delayed_records = (await db.execute(stmt_payments)).scalars().all()
 
         sql_table_results = [
             {
@@ -213,9 +182,9 @@ class MultiAgentSystem:
         ]
 
         if sql_table_results:
-            worst = max(sql_table_results, key=lambda r: r["delay_days"])
+            worst = max(sql_table_results, key=lambda r: r["delay_days"] or 0)
             aggregation_details = (
-                f"Retrieved {len(sql_table_results)} delayed invoice records from PostgreSQL. "
+                f"Retrieved {len(sql_table_results)} delayed invoice records. "
                 f"Highest delay: '{worst['supplier_name']}' ({worst['delay_days']} days late on "
                 f"invoice {worst['invoice_number']}, ${worst['amount_usd']:,.2f} USD)."
             )
@@ -224,44 +193,41 @@ class MultiAgentSystem:
             aggregation_details = "No delayed invoice records found in payment_history."
             top_supplier = None
 
-        agent_steps.append(
-            AgentThoughtStep(
-                agent_name="SQL Agent",
-                action="DATA_AGGREGATION",
-                details=aggregation_details,
-                timestamp=time.time()
-            )
-        )
+        agent_steps.append(_step("SQL Agent", "DATA_AGGREGATION", aggregation_details))
 
-        # 2. Retrieval Agent Step: Retrieving supplier contract penalty clauses via RAG
         rag_query = f"{top_supplier} penalty clause late payment interest rate" if top_supplier else message
-        agent_steps.append(
-            AgentThoughtStep(
-                agent_name="Retrieval Agent",
-                action="CONTRACT_RAG_SEARCH",
-                details=f"Executing hybrid vector retrieval for: '{rag_query}'.",
-                timestamp=time.time()
-            )
-        )
+        agent_steps.append(_step("Retrieval Agent", "CONTRACT_RAG_SEARCH", f"Hybrid retrieval for: '{rag_query}'."))
 
         citations = await hybrid_retriever.retrieve(db, query=rag_query, current_user=user, top_k=3)
 
-        agent_steps.append(
-            AgentThoughtStep(
-                agent_name="Coordinator Agent",
-                action="UNIFIED_SYNTHESIS",
-                details=f"Merging {len(sql_table_results)} structured SQL records with {len(citations)} retrieved contract citations for final synthesis.",
-                timestamp=time.time()
-            )
-        )
+        agent_steps.append(_step(
+            "Coordinator Agent", "UNIFIED_SYNTHESIS",
+            f"Combining {len(sql_table_results)} payment records with {len(citations)} document citations."
+        ))
 
-        system_prompt = "You are the Enterprise AI Financial & Legal Coordinator. Combine structured SQL data and RAG document citations into a clear unified executive summary."
-        user_prompt = f"User Question: {message}\n\nSQL Table Results:\n{sql_table_results}\n\nRetrieved Contract Citations:\n{[c.content_snippet for c in citations]}"
+        if sql_table_results:
+            table = "invoice | supplier | amount_usd | delay_days\n" + "\n".join(
+                f"{r['invoice_number']} | {r['supplier_name']} | {r['amount_usd']:.2f} | {r['delay_days']}"
+                for r in sql_table_results
+            )
+        else:
+            table = "(no delayed invoices found)"
+
+        system_prompt = (
+            "You are the Enterprise AI Financial & Legal Coordinator. Combine the payment records and the "
+            "document excerpts into a clear summary. Use only the data given; cite Document Name and Page "
+            "Number for document facts, and say plainly if something isn't covered."
+        )
+        user_prompt = (
+            f"User Question: {message}\n\nDelayed payment records (from payment_history):\n{table}\n\n"
+            f"Retrieved Contract Excerpts:\n{_format_citations(citations) or '(no matching documents)'}"
+        )
 
         history_dict = [{"role": h.role, "content": h.content} for h in history]
         answer = await llm_service.generate_chat_response(system_prompt, user_prompt, history_dict)
 
         latency = (time.time() - start_time) * 1000
+        await log_search(db, user.id, message, "Chat: SQL + RAG", citations, latency)
 
         return ChatResponse(
             answer=answer,

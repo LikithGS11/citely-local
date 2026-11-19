@@ -1,127 +1,98 @@
-# Enterprise AI Knowledge Intelligence Platform (Production-Grade RAG)
+# Enterprise AI Knowledge Platform (Local RAG)
 
-A production-grade, highly scalable **Enterprise AI Knowledge Intelligence Platform** architected with **FastAPI**, **PostgreSQL (`pgvector`)**, **Celery + Redis**, **Next.js 14**, and **Hybrid Retrieval-Augmented Generation (RAG)**. This system goes far beyond simple PDF chat applications to provide real-world, secure organizational knowledge discovery and reasoning.
+A local, single-user knowledge assistant: upload documents, search them with hybrid retrieval, and ask questions answered by a local LLM (Ollama) with page-level citations.
 
----
+**Stack:** FastAPI · PostgreSQL 16 + `pgvector` · Celery + Redis · Sentence Transformers · Ollama · Next.js 14
 
-## 🌟 Key Architectural Capabilities & Core Features
-
-### 1. Granular Enterprise Security & RBAC
-- **JWT Authentication** with Department-level and Document-level permissions (`HR`, `Finance`, `Operations`, `Legal`, `General`).
-- Role-Based Access Control (`Admin`, `Manager`, `Viewer`) enforced across both API endpoints and vector search queries.
-- **Audit Logging** tracking every document upload, version comparison, search query, and AI conversation.
-
-### 2. Multi-Format Intelligent Document Processing & OCR
-- Supports uploading **PDF, DOCX, PPTX, XLSX, CSV, TXT, Markdown, Images, and Scanned PDFs**.
-- Automatic text cleaning, semantic chunking (`RecursiveCharacterTextSplitter`), and metadata tagging (Title, Department, Confidentiality Level, Versioning, Tags).
-- **Asynchronous Celery Workers** handle heavy processing, embedding generation, and vector indexing in the background without blocking the UI.
-
-### 3. State-of-the-Art Hybrid Retrieval & Reranking
-- Combines **Dense Vector Search** (`pgvector` cosine similarity with `all-MiniLM-L6-v2` / `BGE` embeddings) and **Keyword Search** (Postgres `BM25` / `to_tsvector`).
-- Applies **Reciprocal Rank Fusion (RRF)** and relevance reranking with department and confidentiality level filtering before feeding context to the AI.
-
-### 4. Multi-Agent AI Orchestration & SQL+RAG Unified Workflow
-- **Coordinator Agent**: Dynamically classifies user intent and delegates tasks to specialized sub-agents.
-- **Retrieval Agent**: Synthesizes exact, interactive **Source Citations** (`Document Name`, `Page Number`, `Section`).
-- **SQL Agent**: Connects to structured PostgreSQL business tables (`PaymentHistory`, `SupplierContracts`) to translate natural language into safe, read-only SQL queries.
-- **Unified SQL + RAG Engine**: Seamlessly answers hybrid queries such as *"Which supplier has the highest delayed payments, and what do their contracts say about penalties?"* by combining database aggregations with RAG contract retrieval.
-
-### 5. Multi-Turn Conversation Memory & Version Control
-- Tracks multi-turn dialogue history so users can ask follow-up questions naturally (e.g., *"Summarize Supplier ABC's contract."* -> *"What are the payment terms?"*).
-- Complete **Document Versioning** allowing users to upload updated versions (`v1.0`, `v2.0`), track changelogs, and view side-by-side content comparisons.
-
-### 6. Executive Analytics & Semantic Search Hub
-- Dedicated **Semantic Search Interface** for instant document discovery without chatbot interaction.
-- Real-time **Analytics Dashboard** monitoring most searched documents, departmental queries, AI response latency, and retrieval accuracy.
+> **No authentication.** Every request runs as one local admin user. The API only accepts browser calls from the frontend origin (`CORS_ORIGINS`) and the launcher binds it to `127.0.0.1`. Don't expose it on a network.
 
 ---
 
-## 🛠️ Technology Stack
+## What it does
 
-| Layer | Technologies |
-| :--- | :--- |
-| **Backend Framework** | Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.0 (Async) |
-| **Database & Vector Store** | PostgreSQL 16 + `pgvector` extension, Asyncpg |
-| **Caching & Message Broker** | Redis 7, Celery Background Workers |
-| **AI / RAG Pipeline** | Sentence Transformers (`all-MiniLM-L6-v2`), OpenAI API / Local Simulation Engine, BM25, LangChain |
-| **Document Processing** | PyMuPDF (`fitz`), `python-docx`, `openpyxl`, `pytesseract` (OCR), Pillow |
-| **Frontend Web App** | Next.js 14 (App Router), TypeScript, Tailwind CSS, Lucide Icons, Framer Motion, Recharts |
-| **Containerization** | Docker, Docker Compose |
+### Document ingestion
+- Upload **PDF, DOCX, PPTX, XLSX, CSV, TXT, Markdown, PNG/JPG**. Legacy `.doc`/`.xls` are rejected.
+- Scanned PDF pages and images are OCR'd with Tesseract (must be installed on the server).
+- Text is split into ~800-character chunks (`RecursiveCharacterTextSplitter`), embedded with `all-MiniLM-L6-v2`, and stored in pgvector.
+- Work runs in a Celery worker. If Redis is down it runs in-process in a background thread.
+- If parsing fails or there is no extractable text, the version is marked **FAILED** with the reason. Nothing is indexed.
+- If the embedding model can't load, ingestion and search fail loudly (HTTP 503 / FAILED). There are no fake vectors.
+
+### Versioning
+- Uploading a new version keeps the previous version **searchable until the new one finishes ingesting**. If the new version fails, the old one keeps serving.
+- Two ingested versions can be compared by section headers and chunk counts.
+
+### Retrieval
+1. pgvector cosine search (HNSW index) pulls the top 50 candidate chunks from the current version of each READY document.
+2. BM25 scores those candidates by keyword.
+3. Reciprocal Rank Fusion merges both rankings, with a small boost when query words appear in the title or section heading.
+4. The similarity percentage shown is the real cosine similarity.
+
+### Chat
+- An LLM classifier (keyword fallback) routes each question to one of two fixed pipelines:
+  - **RAG:** hybrid retrieval, then the LLM answers from the retrieved chunks with citations.
+  - **SQL + RAG:** a fixed read-only query for delayed invoices in `payment_history` (worst 25), plus contract retrieval for the worst supplier, then a combined answer. This is not free-form text-to-SQL.
+- The last 8 messages are sent as conversation history. Ollama runs with `num_ctx=8192` so prompts aren't silently truncated.
+- If the LLM is unreachable, the answer is the raw retrieved text, clearly labelled. Nothing is made up.
+
+### Analytics
+- Every chat question and direct search is logged. The dashboard shows real counts, latency, top documents, and recent queries. Retrieval accuracy is shown as "not measured".
 
 ---
 
-## 🚀 Quick Start & Deployment
+## Running it
 
-### Option 1: Docker Compose (Recommended for Full Stack)
-Ensure Docker and Docker Compose are installed, then run from the project root:
+### One click (Windows)
+Double-click **`RAG Launcher.bat`**. It starts Postgres + Redis (WSL), the API on `127.0.0.1:8000`, a Celery worker (`-P solo`), and the frontend on `:3000`. Ollama must already be running.
+
+### Manually
 ```bash
-docker-compose up -d --build
-```
-- **Frontend App**: `http://localhost:3000`
-- **Backend API Docs**: `http://localhost:8000/docs`
-- **PostgreSQL**: `localhost:5432` (`enterprise_rag`)
-- **Redis**: `localhost:6379`
+# 1. Postgres (pgvector) + Redis
+docker compose up -d postgres redis
 
-### Option 2: Local Development Setup
-
-#### 1. Start PostgreSQL (`pgvector`) & Redis
-You can use Docker to spin up just the database services:
-```bash
-docker-compose up -d postgres redis
-```
-
-#### 2. Backend Setup & Database Seeding
-Open a terminal inside the `backend/` folder:
-```bash
+# 2. Backend
 cd backend
 python -m venv venv
-# On Windows: venv\Scripts\activate | On macOS/Linux: source venv/bin/activate
-pip install -r requirements.txt
+venv\Scripts\activate            # macOS/Linux: source venv/bin/activate
+pip install -r requirements-dev.txt
+uvicorn app.main:app --host 127.0.0.1 --port 8000
 
-# Run database setup & automated enterprise seeding
-python -m scripts.seed_data
+# 3. Worker (separate terminal; on Windows add -P solo)
+celery -A app.core.celery_app worker --loglevel=info
 
-# Start FastAPI server
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-*Note: In another terminal window, start the Celery worker:*
-```bash
-cd backend
-celery -A app.core.celery_app worker --loglevel=info -c 2
-```
-
-#### 3. Frontend Setup
-Open a terminal inside the `frontend/` folder:
-```bash
+# 4. Frontend
 cd frontend
 npm install
 npm run dev
 ```
-Open `http://localhost:3000` to access the platform!
+
+### Full Docker stack
+```bash
+docker compose up -d --build
+```
+The backend reaches Ollama on the host at `host.docker.internal:11434`.
+
+### Ollama
+```bash
+ollama pull qwen3:4b
+```
+Set `OLLAMA_MODEL` in `.env` to use a different model. See `.env.example` for every setting.
+
+### Optional sample data
+`python -m scripts.seed_data` (from `backend/`) creates sample supplier and payment tables for the SQL + RAG route, plus a few sample documents.
+
+### Tests
+```bash
+cd backend
+pytest
+```
+
+### Health
+`GET /health` returns 200 only when the database and embedding model are both usable. Otherwise it returns 503 with the reason.
 
 ---
 
-## 👥 Demo Accounts (Pre-Seeded)
-
-When you run `python -m scripts.seed_data`, the following test accounts are automatically created with complete role hierarchies and sample documents:
-
-| Email | Password | Role | Department | Access Scope |
-| :--- | :--- | :--- | :--- | :--- |
-| `admin@enterprise.ai` | `Enterprise2026!` | **Admin** | General / All | Full access across all departments & confidentiality levels (`Restricted`) |
-| `hr@enterprise.ai` | `Enterprise2026!` | **Manager** | HR | Access to HR department docs & HR policies (`Confidential`) |
-| `finance@enterprise.ai` | `Enterprise2026!` | **Manager** | Finance | Access to Finance docs, Supplier Contracts, and SQL Payment tables (`Confidential`) |
-| `engineer@enterprise.ai` | `Enterprise2026!` | **Viewer** | Engineering | Access to Engineering documentation & public guidelines (`Internal`) |
-
----
-
-## 💡 Sample Enterprise Queries to Test
-
-1. **Policy & SOP Retrieval (Hybrid RAG + Citations)**:
-   > *"What is the maternity leave policy for full-time employees, and how many weeks are paid?"*
-2. **Unified SQL + RAG Workflow (Database + Document Reasoning)**:
-   > *"Which supplier has the highest delayed payments, and what do their contracts say about late payment penalty clauses?"*
-3. **Multi-Turn Conversation Memory**:
-   > **Turn 1**: *"Summarize Supplier ABC's master agreement."*  
-   > **Turn 2**: *"What are their payment terms and termination conditions?"*
-4. **Operational & Technical Search**:
-   > *"Explain the warehouse receiving process and quality inspection checklist."*
+## Notes and limits
+- **Schema changes:** there are no Alembic migrations. `init_db()` creates tables and applies small in-place upgrades. Changing `EMBEDDING_MODEL` or `EMBEDDING_DIMENSION` means dropping `document_chunks` and re-ingesting. A mismatch is reported by `/health` at startup.
+- **Chat history** is also kept in process memory: it resets on restart and isn't shared across multiple API workers.
+- **DOCX** has no fixed pages, so DOCX citations point to the section heading (page is always 1).

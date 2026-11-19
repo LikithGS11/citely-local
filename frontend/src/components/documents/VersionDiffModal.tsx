@@ -1,7 +1,9 @@
 "use client";
 
 import React from "react";
-import { X, GitCompare, PlusCircle, MinusCircle, FileText, ArrowRight } from "lucide-react";
+import { X, GitCompare, PlusCircle, MinusCircle } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { useEscapeToClose } from "@/hooks/useEscapeToClose";
 
 export interface VersionDiffData {
   document_id: number;
@@ -20,74 +22,63 @@ interface VersionDiffModalProps {
 }
 
 export const VersionDiffModal: React.FC<VersionDiffModalProps> = ({ data, onClose }) => {
+  useEscapeToClose(true, onClose);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-dark-bg/80 backdrop-blur-sm">
-      <div className="w-full max-w-3xl glass-panel rounded-2xl p-6 border border-dark-border shadow-2xl space-y-6 max-h-[85vh] flex flex-col">
-        <div className="flex items-center justify-between border-b border-dark-border pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-enterprise-500/20 flex items-center justify-center text-enterprise-400 font-bold">
-              <GitCompare className="w-5 h-5" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={onClose}>
+      <div
+        className="w-full max-w-2xl bg-dark-card rounded-2xl p-5 border border-dark-border shadow-card space-y-5 max-h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-dark-border pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-accent-500/10 flex items-center justify-center text-accent-text">
+              <GitCompare className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="font-extrabold text-lg text-white flex items-center gap-2">
-                Version Changelog & Semantic Diff
-              </h3>
-              <p className="text-xs text-gray-400">
-                Comparing {data.document_title} (v{data.version_1} vs v{data.version_2})
+              <h3 className="font-semibold text-sm text-ink-primary">Version comparison</h3>
+              <p className="text-xs text-ink-muted">
+                {data.document_title} · v{data.version_1} vs v{data.version_2}
               </p>
             </div>
           </div>
-          <button 
-            onClick={onClose}
-            className="p-2 rounded-xl bg-dark-card hover:bg-dark-accent text-gray-400 hover:text-white transition-colors"
-          >
-            <X className="w-5 h-5" />
+          <button onClick={onClose} className="text-ink-muted hover:text-ink-primary">
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="space-y-6 overflow-y-auto pr-2 flex-1 font-sans">
-          {/* Summary Box */}
-          <div className="p-4 rounded-xl bg-dark-card border border-dark-border/80 space-y-1">
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Semantic Extraction Summary</p>
-            <p className="text-xs text-gray-200 leading-relaxed font-mono">{data.diff_summary}</p>
+        <div className="space-y-4 overflow-y-auto pr-1 flex-1">
+          <div className="p-3.5 rounded-xl bg-dark-bg border border-dark-border">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-ink-muted mb-1">Summary</p>
+            <p className="text-sm text-ink-secondary leading-relaxed">{data.diff_summary}</p>
           </div>
 
-          {/* Side by side sections */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Added Sections */}
-            <div className="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/30 space-y-3">
-              <div className="flex items-center justify-between text-xs font-bold text-emerald-400">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div className="p-3.5 rounded-xl bg-status-good/5 border border-status-good/20 space-y-2">
+              <div className="flex items-center justify-between text-xs font-medium text-status-good">
                 <span className="flex items-center gap-1.5">
-                  <PlusCircle className="w-4 h-4" />
-                  Added / Modified Section Headers
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  Added sections
                 </span>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20">{data.added_sections.length}</span>
+                <span>{data.added_sections.length}</span>
               </div>
-              <ul className="space-y-2 text-xs font-mono text-gray-300">
+              <ul className="space-y-1.5 text-xs text-ink-secondary">
                 {data.added_sections.map((sec, idx) => (
-                  <li key={idx} className="p-2 rounded bg-dark-bg/60 border border-emerald-500/20 flex items-center gap-2">
-                    <span className="text-emerald-400 font-bold">+</span>
-                    <span>{sec}</span>
-                  </li>
+                  <li key={idx} className="p-2 rounded-lg bg-dark-bg border border-status-good/10">{sec}</li>
                 ))}
               </ul>
             </div>
 
-            {/* Removed Sections */}
-            <div className="p-4 rounded-xl bg-rose-950/20 border border-rose-500/30 space-y-3">
-              <div className="flex items-center justify-between text-xs font-bold text-rose-400">
+            <div className="p-3.5 rounded-xl bg-status-critical/5 border border-status-critical/20 space-y-2">
+              <div className="flex items-center justify-between text-xs font-medium text-status-critical">
                 <span className="flex items-center gap-1.5">
-                  <MinusCircle className="w-4 h-4" />
-                  Removed / Replaced Section Headers
+                  <MinusCircle className="w-3.5 h-3.5" />
+                  Removed sections
                 </span>
-                <span className="px-2 py-0.5 rounded-full bg-rose-500/20">{data.removed_sections.length}</span>
+                <span>{data.removed_sections.length}</span>
               </div>
-              <ul className="space-y-2 text-xs font-mono text-gray-300">
+              <ul className="space-y-1.5 text-xs text-ink-secondary">
                 {data.removed_sections.map((sec, idx) => (
-                  <li key={idx} className="p-2 rounded bg-dark-bg/60 border border-rose-500/20 flex items-center gap-2">
-                    <span className="text-rose-400 font-bold">-</span>
-                    <span>{sec}</span>
-                  </li>
+                  <li key={idx} className="p-2 rounded-lg bg-dark-bg border border-status-critical/10">{sec}</li>
                 ))}
               </ul>
             </div>
@@ -95,12 +86,7 @@ export const VersionDiffModal: React.FC<VersionDiffModalProps> = ({ data, onClos
         </div>
 
         <div className="pt-3 border-t border-dark-border flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-5 py-2 rounded-xl bg-enterprise-600 hover:bg-enterprise-500 text-white font-bold text-xs transition-colors"
-          >
-            Close Comparison
-          </button>
+          <Button variant="secondary" size="sm" onClick={onClose}>Close</Button>
         </div>
       </div>
     </div>

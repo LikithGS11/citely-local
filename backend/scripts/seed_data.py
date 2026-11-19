@@ -213,6 +213,7 @@ async def seed_enterprise_data():
                         file_name=safe_filename,
                         file_size_bytes=len(sdoc["content"]),
                         file_type="txt",
+                        status=DocumentStatus.READY.value,
                         content_summary=sdoc["content"][:300] + "..."
                     )
                     db.add(ver_obj)

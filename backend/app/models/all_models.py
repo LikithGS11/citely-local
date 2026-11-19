@@ -73,7 +73,11 @@ class DocumentVersion(Base):
     file_name = Column(String(255), nullable=False)
     file_size_bytes = Column(Integer, default=0)
     file_type = Column(String(50), nullable=False)  # pdf, docx, xlsx, etc.
-    content_summary = Column(Text, nullable=True)
+    content_summary = Column(Text, nullable=True)  # first chunk preview, or the failure reason
+    # Per-version ingestion status. The document's current_version_number only
+    # advances to a version once it is READY, so a re-upload never hides the
+    # previous working version from search.
+    status = Column(String(50), default=DocumentStatus.PENDING.value, nullable=False)
     upload_date = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     document = relationship("Document", back_populates="versions")
@@ -94,7 +98,7 @@ class DocumentChunk(Base):
     section_title = Column(String(255), nullable=True)
     page_number = Column(Integer, default=1)
     token_count = Column(Integer, default=0)
-    embedding = Column(Vector(384), nullable=True)  # 384 dimensions for all-MiniLM-L6-v2
+    embedding = Column(Vector(settings.EMBEDDING_DIMENSION), nullable=True)
     metadata_json = Column(JSON, default=dict)
 
     version = relationship("DocumentVersion", back_populates="chunks")
