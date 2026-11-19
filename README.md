@@ -1,98 +1,142 @@
+<div align="center">
+
 # Citely
 
 **Ask your documents, get cited answers.**
 
-Citely is a local, single-user document assistant: upload documents, search them with hybrid retrieval, and ask questions answered by a local LLM (Ollama) with page-level citations.
+A private, fully local document assistant. Upload your files, ask questions in plain language,<br>
+and get answers that link back to the exact document and page.
 
-**Stack:** FastAPI · PostgreSQL 16 + `pgvector` · Celery + Redis · Sentence Transformers · Ollama · Next.js 14
+![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-14-000000?logo=nextdotjs&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-4169E1?logo=postgresql&logoColor=white)
+![Ollama](https://img.shields.io/badge/LLM-Ollama-111111)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-**License:** MIT
+![Citely screenshots](docs/screenshots/citely-collage.png)
 
-> **No authentication.** Every request runs as one local admin user. The API only accepts browser calls from the frontend origin (`CORS_ORIGINS`) and the launcher binds it to `127.0.0.1`. Don't expose it on a network.
+</div>
 
----
+## Features
 
-## What it does
+- **Cited answers.** Every answer names the document, page and section it came from, so you can check it.
+- **Hybrid search.** Combines meaning-based vector search (pgvector) with keyword search (BM25).
+- **Runs locally.** The LLM runs on your machine through Ollama. No API keys, and your files never leave your PC.
+- **Many file types.** PDF, Word, PowerPoint, Excel, CSV, text, Markdown, and images (with OCR).
+- **Versioning.** Upload a new version of a document and compare it with the old one. The old version stays searchable until the new one is ready.
+- **Saved conversations.** Chat history is stored in the database and survives restarts.
+- **Analytics.** See which documents are searched most, response times, and recent questions.
 
-### Document ingestion
-- Upload **PDF, DOCX, PPTX, XLSX, CSV, TXT, Markdown, PNG/JPG**. Legacy `.doc`/`.xls` are rejected.
-- Scanned PDF pages and images are OCR'd with Tesseract (must be installed on the server).
-- Text is split into ~800-character chunks (`RecursiveCharacterTextSplitter`), embedded with `all-MiniLM-L6-v2`, and stored in pgvector.
-- Work runs in a Celery worker. If Redis is down it runs in-process in a background thread.
-- If parsing fails or there is no extractable text, the version is marked **FAILED** with the reason. Nothing is indexed.
-- If the embedding model can't load, ingestion and search fail loudly (HTTP 503 / FAILED). There are no fake vectors.
+## How it works
 
-### Versioning
-- Uploading a new version keeps the previous version **searchable until the new one finishes ingesting**. If the new version fails, the old one keeps serving.
-- Two ingested versions can be compared by section headers and chunk counts.
+```text
+Upload ──► Extract text ──► Split into chunks ──► Embed ──► pgvector
+                                                              │
+Question ──► Vector search + keyword search ──► Rank ◄────────┘
+                                                  │
+                                    Top chunks ──► Local LLM ──► Answer with citations
+```
 
-### Retrieval
-1. pgvector cosine search (HNSW index) pulls the top 50 candidate chunks from the current version of each READY document.
-2. BM25 scores those candidates by keyword.
-3. Reciprocal Rank Fusion merges both rankings, with a small boost when query words appear in the title or section heading.
-4. The similarity percentage shown is the real cosine similarity.
+Documents are processed in the background by a Celery worker. When you ask a question, Citely finds the most relevant passages, then the local LLM writes an answer using only those passages.
 
-### Chat
-- An LLM classifier (keyword fallback) routes each question to one of two fixed pipelines:
-  - **RAG:** hybrid retrieval, then the LLM answers from the retrieved chunks with citations.
-  - **SQL + RAG:** a fixed read-only query for delayed invoices in `payment_history` (worst 25), plus contract retrieval for the worst supplier, then a combined answer. This is not free-form text-to-SQL.
-- The last 8 messages are sent as conversation history. Ollama runs with `num_ctx=8192` so prompts aren't silently truncated.
-- If the LLM is unreachable, the answer is the raw retrieved text, clearly labelled. Nothing is made up.
+## Tech stack
 
-### Analytics
-- Every chat question and direct search is logged. The dashboard shows real counts, latency, top documents, and recent queries. Retrieval accuracy is shown as "not measured".
+| Part | Built with |
+| :-- | :-- |
+| Backend | FastAPI, SQLAlchemy (async), Celery + Redis |
+| Database | PostgreSQL 16 with pgvector |
+| AI | Ollama (local LLM), Sentence Transformers (`all-MiniLM-L6-v2`), BM25 |
+| Documents | PyMuPDF, python-docx, python-pptx, openpyxl, Tesseract OCR |
+| Frontend | Next.js 14, TypeScript, Tailwind CSS |
 
----
+## Getting started
 
-## Running it
+### Requirements
 
-### One click (Windows)
-Double-click **`RAG Launcher.bat`**. It starts Postgres + Redis (WSL), the API on `127.0.0.1:8000`, a Celery worker (`-P solo`), and the frontend on `:3000`. Ollama must already be running.
+- Python 3.10+ and Node.js 18+
+- PostgreSQL 16 with the [pgvector](https://github.com/pgvector/pgvector) extension, and Redis
+- [Ollama](https://ollama.com) with a model pulled, for example `ollama pull gemma3:4b`
+- Optional: [Tesseract](https://github.com/tesseract-ocr/tesseract) for scanned PDFs and images
 
-### Manually
+### Setup
+
 ```bash
-# 1. Start PostgreSQL 16 (with the pgvector extension) and Redis.
-#    The launcher runs both inside WSL Ubuntu; any local install works.
+git clone https://github.com/LikithGS11/citely-local.git
+cd citely-local
+cp .env.example .env          # then edit the values if needed
 
-# 2. Backend
+# Backend
 cd backend
 python -m venv venv
-venv\Scripts\activate            # macOS/Linux: source venv/bin/activate
-pip install -r requirements-dev.txt
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+venv\Scripts\activate         # macOS/Linux: source venv/bin/activate
+pip install -r requirements.txt
 
-# 3. Worker (separate terminal; on Windows add -P solo)
-celery -A app.core.celery_app worker --loglevel=info
-
-# 4. Frontend
-cd frontend
+# Frontend
+cd ../frontend
 npm install
-npm run dev
 ```
 
-### Ollama
+### Run
+
+**Windows:** double-click `RAG Launcher.bat`. It starts every service and opens the app.
+
+**Manually**, in three terminals:
+
 ```bash
-ollama pull gemma3:4b
+# 1. API
+cd backend && uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+# 2. Background worker (on Windows, add: -P solo)
+cd backend && celery -A app.core.celery_app worker --loglevel=info
+
+# 3. Frontend
+cd frontend && npm run dev
 ```
-Set `OLLAMA_MODEL` in `.env` to use a different model. See `.env.example` for every setting.
 
-### Optional sample data
-`python -m scripts.seed_data` (from `backend/`) creates sample supplier and payment tables for the SQL + RAG route, plus a few sample documents.
+Open **<http://localhost:3000>**. To check that everything is connected, open <http://localhost:8000/health>.
 
-### Tests
+## Configuration
+
+All settings live in `.env` in the project root. The main ones:
+
+| Variable | Default | What it does |
+| :-- | :-- | :-- |
+| `OLLAMA_MODEL` | `gemma3:4b` | Which local model answers questions |
+| `OLLAMA_NUM_CTX` | `8192` | How much text the model can read at once |
+| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Model used to embed documents |
+| `POSTGRES_*`, `REDIS_*` | `127.0.0.1` | Database and queue connection |
+| `CORS_ORIGINS` | `localhost:3000` | Which web pages may call the API |
+
+See [`.env.example`](.env.example) for the full list.
+
+## Project structure
+
+```text
+backend/
+  app/ai/          retrieval, embeddings, LLM, question routing
+  app/api/v1/      REST endpoints: documents, chat, search, analytics
+  app/services/    file parsing and chunking
+  app/tasks/       background ingestion jobs
+  tests/           pytest suite
+frontend/src/      Next.js pages and components
+launcher.py        one-click start/stop app for Windows
+```
+
+## Testing
+
 ```bash
 cd backend
+pip install -r requirements-dev.txt
 pytest
 ```
 
-### Health
-`GET /health` returns 200 only when the database and embedding model are both usable. Otherwise it returns 503 with the reason.
+## Good to know
 
----
+- **No login.** Citely is built for one person on their own computer. Don't expose it to a network.
+- **Changing the embedding model** means re-uploading your documents.
+- **Word files** have no fixed pages, so their citations point to the section heading instead.
 
-## Notes and limits
-- **Schema changes:** there are no Alembic migrations. `init_db()` creates tables and applies small in-place upgrades. Changing `EMBEDDING_MODEL` or `EMBEDDING_DIMENSION` means dropping `document_chunks` and re-ingesting. A mismatch is reported by `/health` at startup.
-- **Chat history** is saved in Postgres (`chat_messages`), so conversations survive restarts. Clearing the chat in the UI deletes it.
-- **Deleting a document** removes all its versions, its search index, and its uploaded files. It's refused while a version is still processing.
-- **SQL + RAG** runs one fixed query (delayed invoices). It is not general text-to-SQL.
-- **DOCX** has no fixed pages, so DOCX citations point to the section heading (page is always 1).
+## License
+
+[MIT](LICENSE)
