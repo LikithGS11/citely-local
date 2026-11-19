@@ -5,7 +5,7 @@ from typing import List, Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, func
+from sqlalchemy import select, desc, func, delete as sa_delete
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -260,6 +260,53 @@ async def compare_versions(
             "chunk_count_change": len(chunks_v2) - len(chunks_v1)
         }
     )
+
+
+@router.delete("/{document_id}")
+async def delete_document(
+    document_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Permanently deletes a document: all versions, their indexed chunks, and the
+    uploaded files on disk. Refused while a version is still being ingested.
+    """
+    doc = (await db.execute(
+        select(Document).options(selectinload(Document.versions))
+        .where(Document.id == document_id).with_for_update()
+    )).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if current_user.role != "admin" and doc.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the document owner or an admin can delete it")
+
+    in_progress = {DocumentStatus.PENDING.value, DocumentStatus.PROCESSING.value}
+    if any(v.status in in_progress for v in doc.versions):
+        raise HTTPException(status_code=409, detail="A version is still processing. Try again once it finishes.")
+
+    title = doc.title
+    file_paths = [v.file_path for v in doc.versions]
+
+    await db.execute(sa_delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
+    await db.execute(sa_delete(DocumentVersion).where(DocumentVersion.document_id == document_id))
+    await db.execute(sa_delete(Document).where(Document.id == document_id))
+    db.add(AuditLog(
+        user_id=current_user.id,
+        action="DELETE_DOCUMENT",
+        resource_type="Document",
+        resource_id=str(document_id),
+        details=f"Deleted '{title}' ({len(file_paths)} version(s))",
+    ))
+    await db.commit()
+
+    upload_root = os.path.realpath(settings.UPLOAD_DIR)
+    for path in file_paths:
+        # Only ever remove files inside the uploads folder
+        if os.path.realpath(path).startswith(upload_root + os.sep):
+            _remove_quietly(path)
+
+    return {"status": "deleted", "document_id": document_id}
 
 
 def _to_response(doc: Document) -> DocumentResponse:

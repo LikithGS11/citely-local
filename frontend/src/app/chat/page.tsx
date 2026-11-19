@@ -60,6 +60,38 @@ export default function ChatAssistantPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const conversationId = `session-${user.id}`;
+
+  // Restore the saved conversation from the server (it survives restarts)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/chat/history?conversation_id=${encodeURIComponent(conversationId)}`);
+        if (!res.ok) return;
+        const rows: any[] = await res.json();
+        if (cancelled || rows.length === 0) return;
+        setMessages([
+          WELCOME,
+          ...rows.map((r, i) => ({
+            id: `saved-${i}-${r.created_at}`,
+            role: r.role,
+            content: r.content,
+            citations: r.citations || [],
+            agent_steps: r.agent_steps || [],
+            unified_data: r.unified_data,
+            latency_ms: r.latency_ms ?? undefined,
+          })),
+        ]);
+      } catch {
+        // Backend unreachable: start with an empty conversation
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
@@ -95,7 +127,7 @@ export default function ChatAssistantPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: prompt,
-          conversation_id: `session-${user.id}`,
+          conversation_id: conversationId,
           history: historyPayload,
         }),
       });
@@ -137,7 +169,16 @@ export default function ChatAssistantPage() {
     }
   };
 
-  const handleClear = () => setMessages([WELCOME]);
+  const handleClear = async () => {
+    setMessages([WELCOME]);
+    try {
+      await fetch(`${API_BASE}/chat/history?conversation_id=${encodeURIComponent(conversationId)}`, {
+        method: "DELETE",
+      });
+    } catch {
+      // Backend unreachable: the saved copy will reappear next time it loads
+    }
+  };
 
   return (
     <div className="flex flex-col h-full max-w-4xl mx-auto gap-3">

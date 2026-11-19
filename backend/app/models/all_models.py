@@ -162,3 +162,17 @@ class SearchAnalytics(Base):
     latency_ms = Column(Float, nullable=False)
     result_count = Column(Integer, default=0)
     timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class ChatMessageRecord(Base):
+    """Persisted chat history, so conversations survive restarts."""
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    conversation_id = Column(String(100), nullable=False, index=True)
+    role = Column(String(20), nullable=False)  # user | assistant
+    content = Column(Text, nullable=False)
+    # Assistant extras (citations, agent_steps, unified_data, latency_ms) so the UI can redraw them
+    meta_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)

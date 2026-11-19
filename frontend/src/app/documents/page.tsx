@@ -13,6 +13,7 @@ import {
   X,
   UploadCloud,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import { useAuth } from "@/components/common/AuthContext";
 import { useToast } from "@/components/common/ToastContext";
@@ -192,6 +193,28 @@ export default function DocumentsPage() {
     }
   };
 
+  const handleDelete = async (doc: DocumentItem) => {
+    const ok = window.confirm(
+      `Delete "${doc.title}"?
+
+This permanently removes all ${doc.versions.length} version(s), their search index, and the uploaded files.`
+    );
+    if (!ok) return;
+    try {
+      const res = await fetch(`${API_BASE}/documents/${doc.id}`, { method: "DELETE" });
+      if (res.ok) {
+        setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
+        toast.success(`Deleted "${doc.title}"`);
+        return;
+      }
+      const body = await res.json().catch(() => null);
+      toast.error(`Delete failed: ${body?.detail || `server responded with ${res.status}`}`);
+    } catch (err) {
+      console.error("Delete error:", err);
+      toast.error("Delete failed: could not reach the backend server.");
+    }
+  };
+
   const resetForm = () => {
     setTitle("");
     setSelectedFile(null);
@@ -334,6 +357,16 @@ export default function DocumentsPage() {
                         Compare
                       </Button>
                     )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={<Trash2 className="w-3.5 h-3.5" />}
+                      onClick={() => handleDelete(doc)}
+                      disabled={isInProgress(doc)}
+                      title={isInProgress(doc) ? "Wait until processing finishes" : "Delete document"}
+                    >
+                      Delete
+                    </Button>
                   </div>
                 </div>
 

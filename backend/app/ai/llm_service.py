@@ -85,7 +85,7 @@ class LLMService:
                 resp = await client.post(f"{settings.OLLAMA_BASE_URL}/api/chat", json=payload)
             if resp.status_code == 404:
                 raise RuntimeError(
-                    f"Ollama model '{settings.OLLAMA_MODEL}' is not installed — run `ollama pull {settings.OLLAMA_MODEL}` "
+                    f"Ollama model '{settings.OLLAMA_MODEL}' is not installed - run `ollama pull {settings.OLLAMA_MODEL}` "
                     "or set OLLAMA_MODEL to an installed model"
                 )
             resp.raise_for_status()

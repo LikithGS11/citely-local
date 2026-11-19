@@ -129,3 +129,13 @@ class AnalyticsSummaryResponse(BaseModel):
     top_queried_documents: List[Dict[str, Any]]
     department_usage: List[Dict[str, Any]]
     recent_queries: List[Dict[str, Any]]
+
+
+class ChatHistoryItem(BaseModel):
+    role: str
+    content: str
+    citations: List[ChunkCitation] = []
+    agent_steps: List[AgentThoughtStep] = []
+    unified_data: Optional[Dict[str, Any]] = None
+    latency_ms: Optional[float] = None
+    created_at: datetime

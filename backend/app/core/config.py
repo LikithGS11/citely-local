@@ -4,6 +4,9 @@ from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+
+
 class Settings(BaseSettings):
     # App General Settings
     PROJECT_NAME: str = "Citely"
@@ -29,7 +32,7 @@ class Settings(BaseSettings):
     # Options: "ollama" (local Ollama server), "openai", or "local" (no LLM — extractive answers only)
     LLM_PROVIDER: str = "ollama"
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "qwen3:4b"
+    OLLAMA_MODEL: str = "gemma3:4b"
     # Context window passed to Ollama. Its default is small, and overflowing it
     # silently drops the oldest tokens (usually the system prompt).
     OLLAMA_NUM_CTX: int = 8192
@@ -42,7 +45,9 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = str(Path(__file__).resolve().parent.parent.parent / "uploads")
     MAX_UPLOAD_SIZE_MB: int = 50
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    # Always the project-root .env, whatever directory uvicorn/celery start in.
+    # (A second backend/.env used to shadow it and silently pin a stale model.)
+    model_config = SettingsConfigDict(env_file=str(PROJECT_ROOT / ".env"), env_file_encoding="utf-8", extra="ignore")
 
     @property
     def async_database_url(self) -> str:

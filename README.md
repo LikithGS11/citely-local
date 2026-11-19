@@ -6,6 +6,8 @@ Citely is a local, single-user document assistant: upload documents, search them
 
 **Stack:** FastAPI · PostgreSQL 16 + `pgvector` · Celery + Redis · Sentence Transformers · Ollama · Next.js 14
 
+**License:** MIT
+
 > **No authentication.** Every request runs as one local admin user. The API only accepts browser calls from the frontend origin (`CORS_ORIGINS`) and the launcher binds it to `127.0.0.1`. Don't expose it on a network.
 
 ---
@@ -49,8 +51,8 @@ Double-click **`RAG Launcher.bat`**. It starts Postgres + Redis (WSL), the API o
 
 ### Manually
 ```bash
-# 1. Postgres (pgvector) + Redis
-docker compose up -d postgres redis
+# 1. Start PostgreSQL 16 (with the pgvector extension) and Redis.
+#    The launcher runs both inside WSL Ubuntu; any local install works.
 
 # 2. Backend
 cd backend
@@ -68,15 +70,9 @@ npm install
 npm run dev
 ```
 
-### Full Docker stack
-```bash
-docker compose up -d --build
-```
-The backend reaches Ollama on the host at `host.docker.internal:11434`.
-
 ### Ollama
 ```bash
-ollama pull qwen3:4b
+ollama pull gemma3:4b
 ```
 Set `OLLAMA_MODEL` in `.env` to use a different model. See `.env.example` for every setting.
 
@@ -96,5 +92,7 @@ pytest
 
 ## Notes and limits
 - **Schema changes:** there are no Alembic migrations. `init_db()` creates tables and applies small in-place upgrades. Changing `EMBEDDING_MODEL` or `EMBEDDING_DIMENSION` means dropping `document_chunks` and re-ingesting. A mismatch is reported by `/health` at startup.
-- **Chat history** is also kept in process memory: it resets on restart and isn't shared across multiple API workers.
+- **Chat history** is saved in Postgres (`chat_messages`), so conversations survive restarts. Clearing the chat in the UI deletes it.
+- **Deleting a document** removes all its versions, its search index, and its uploaded files. It's refused while a version is still processing.
+- **SQL + RAG** runs one fixed query (delayed invoices). It is not general text-to-SQL.
 - **DOCX** has no fixed pages, so DOCX citations point to the section heading (page is always 1).
