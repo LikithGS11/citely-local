@@ -77,7 +77,7 @@ class Launcher(tk.Tk):
         dpi = self.winfo_fpixels("1i")
         self.tk.call("tk", "scaling", dpi / 72.0)
 
-        self.title("Enterprise RAG Launcher")
+        self.title("Citely Launcher")
         self.configure(bg=BG)
         self.minsize(520, 560)
         self.geometry("560x680")
@@ -96,7 +96,7 @@ class Launcher(tk.Tk):
         # header
         header = tk.Frame(self, bg=BG)
         header.grid(row=0, column=0, sticky="ew", padx=20, pady=(18, 10))
-        tk.Label(header, text="Enterprise RAG Platform", bg=BG, fg=TEXT,
+        tk.Label(header, text="Citely", bg=BG, fg=TEXT,
                  font=("Segoe UI Semibold", 16)).pack(anchor="w")
         tk.Label(header, text="Ollama  ·  pgvector  ·  Hybrid retrieval", bg=BG, fg=MUTED,
                  font=("Segoe UI", 10)).pack(anchor="w")

@@ -126,7 +126,7 @@ class MultiAgentSystem:
         ))
 
         system_prompt = (
-            "You are the Enterprise AI Knowledge Assistant. Answer the user's question using only the "
+            "You are Citely, a document assistant. Answer the user's question using only the "
             "document context provided. Whenever you state a fact from the context, cite the Document Name "
             "and Page Number. If the context does not contain the answer, say so plainly."
         )
@@ -214,7 +214,7 @@ class MultiAgentSystem:
             table = "(no delayed invoices found)"
 
         system_prompt = (
-            "You are the Enterprise AI Financial & Legal Coordinator. Combine the payment records and the "
+            "You are Citely, acting as a financial and legal analyst. Combine the payment records and the "
             "document excerpts into a clear summary. Use only the data given; cite Document Name and Page "
             "Number for document facts, and say plainly if something isn't covered."
         )

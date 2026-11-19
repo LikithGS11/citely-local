@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting up Enterprise AI Knowledge Platform API server...")
+    logger.info("Starting up Citely API server...")
     await init_db()
     yield
 
@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    description="Enterprise knowledge platform with hybrid RAG (pgvector + BM25) and a local Ollama LLM.",
+    description="Citely: ask your documents, get cited answers. Hybrid RAG (pgvector + BM25) and a local Ollama LLM.",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan

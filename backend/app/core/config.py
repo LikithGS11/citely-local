@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # App General Settings
-    PROJECT_NAME: str = "Enterprise AI Knowledge Intelligence Platform"
+    PROJECT_NAME: str = "Citely"
     VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
     API_V1_STR: str = "/api/v1"

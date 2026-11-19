@@ -7,8 +7,8 @@ import { ToastProvider } from "@/components/common/ToastContext";
 import { AppShell } from "@/components/common/AppShell";
 
 export const metadata: Metadata = {
-  title: "Enterprise AI Knowledge Workspace",
-  description: "Ask questions across your documents and get grounded, cited answers.",
+  title: "Citely",
+  description: "Ask your documents, get cited answers.",
 };
 
 // Applies the saved theme before first paint, so there's no flash of the

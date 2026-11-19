@@ -199,9 +199,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onClose, onOpenSet
             {!collapsed && (
               <div>
                 <h1 className="font-semibold text-sm tracking-tight text-ink-primary leading-none group-hover:text-accent-text transition-colors">
-                  Enterprise AI
+                  Citely
                 </h1>
-                <p className="text-[11px] text-ink-muted mt-0.5">Knowledge workspace</p>
+                <p className="text-[11px] text-ink-muted mt-0.5">Cited document answers</p>
               </div>
             )}
           </Link>
@@ -230,9 +230,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onClose, onOpenSet
                 </div>
                 <div>
                   <h1 className="font-semibold text-sm tracking-tight text-ink-primary leading-none group-hover:text-accent-text transition-colors">
-                    Enterprise AI
+                    Citely
                   </h1>
-                  <p className="text-[11px] text-ink-muted mt-0.5">Knowledge workspace</p>
+                  <p className="text-[11px] text-ink-muted mt-0.5">Cited document answers</p>
                 </div>
               </Link>
               <button

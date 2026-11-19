@@ -1,6 +1,8 @@
-# Enterprise AI Knowledge Platform (Local RAG)
+# Citely
 
-A local, single-user knowledge assistant: upload documents, search them with hybrid retrieval, and ask questions answered by a local LLM (Ollama) with page-level citations.
+**Ask your documents, get cited answers.**
+
+Citely is a local, single-user document assistant: upload documents, search them with hybrid retrieval, and ask questions answered by a local LLM (Ollama) with page-level citations.
 
 **Stack:** FastAPI · PostgreSQL 16 + `pgvector` · Celery + Redis · Sentence Transformers · Ollama · Next.js 14
 
